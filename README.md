@@ -67,6 +67,42 @@ Supported image formats are `.jpg`, `.jpeg`, `.png`, `.bmp`, and `.webp`.
 
 Do not put all images into one folder. The folder name is how the training script learns the label.
 
+## Import Online Dataset
+
+If you downloaded a waste dataset that already has class folders like `cardboard`, `glass`, `metal`, `paper`, `plastic`, `trash`, `biological`, or `organic`, import it into this project's raw folders with:
+
+```powershell
+python src/import_online_dataset.py "C:\Users\shrey\Downloads\waste_dataset"
+```
+
+This does not download anything. It copies matching images from the local dataset folder into:
+
+```text
+data/raw/landfill/
+data/raw/compost/
+data/raw/recycling/
+```
+
+Common mappings:
+
+- `cardboard`, `paper`, `glass`, `metal`, `plastic`, `recyclable`, `recycling` -> `recycling`
+- `biological`, `organic`, `compost`, `food`, `food_waste`, `vegetable`, `fruit` -> `compost`
+- `trash`, `garbage`, `landfill`, `non-recyclable`, `non_recyclable`, `wrappers`, `foam`, `styrofoam` -> `landfill`
+
+Classes such as `hazardous`, `battery`, `batteries`, `electronics`, `e-waste`, `clothes`, `shoes`, `medical`, and `unknown` are ignored.
+
+To limit how many images are copied into each final class:
+
+```powershell
+python src/import_online_dataset.py "C:\Users\shrey\Downloads\waste_dataset" --max-per-class 300
+```
+
+To clear existing images from `data/raw` before importing:
+
+```powershell
+python src/import_online_dataset.py "C:\Users\shrey\Downloads\waste_dataset" --max-per-class 300 --clear-existing
+```
+
 ## Prepare Dataset
 
 Run this command to copy raw images into an 80/10/10 train/validation/test split:
