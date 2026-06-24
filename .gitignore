@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local editor/system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs and generated outputs
+logs/*
+!logs/.gitkeep
+
+# Trained model checkpoints can be large; keep the folder, not generated weights.
+models/*
+!models/.gitkeep
+
+# Keep the dataset folder structure, but do not commit image datasets.
+data/**/*
+!data/**/
+!data/**/.gitkeep
+
+# Temporary files
+*.tmp
+*.log
