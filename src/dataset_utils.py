@@ -9,6 +9,7 @@ from config import (
     LOGS_DIR,
     MODELS_DIR,
     PREDICTIONS_LOG_PATH,
+    RAW_DIR,
     SPLITS,
     SUPPORTED_IMAGE_EXTENSIONS,
 )
@@ -20,6 +21,9 @@ class DatasetError(RuntimeError):
 
 def create_required_folders() -> None:
     """Create the expected data, model, and log folders if needed."""
+    for class_name in CLASS_NAMES:
+        (RAW_DIR / class_name).mkdir(parents=True, exist_ok=True)
+
     for split in SPLITS:
         for class_name in CLASS_NAMES:
             (DATA_DIR / split / class_name).mkdir(parents=True, exist_ok=True)

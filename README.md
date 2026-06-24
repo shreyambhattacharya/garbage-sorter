@@ -15,6 +15,10 @@ Garbage Sorter/
   README.md
   requirements.txt
   data/
+    raw/
+      landfill/
+      compost/
+      recycling/
     train/
       landfill/
       compost/
@@ -51,7 +55,27 @@ cd "$env:USERPROFILE\OneDrive\Desktop\Projects\Garbage Sorter"
 
 ## Add Dataset Images
 
-Put your images into these folders:
+Put your unsplit raw images into these folders:
+
+```text
+data/raw/landfill/
+data/raw/compost/
+data/raw/recycling/
+```
+
+Supported image formats are `.jpg`, `.jpeg`, `.png`, `.bmp`, and `.webp`.
+
+Do not put all images into one folder. The folder name is how the training script learns the label.
+
+## Prepare Dataset
+
+Run this command to copy raw images into an 80/10/10 train/validation/test split:
+
+```powershell
+python src/prepare_dataset.py --clear-existing
+```
+
+This creates copied images in:
 
 ```text
 data/train/landfill/
@@ -67,9 +91,13 @@ data/test/compost/
 data/test/recycling/
 ```
 
-Supported image formats are `.jpg`, `.jpeg`, `.png`, `.bmp`, and `.webp`.
+Raw images are not moved or deleted. The split is shuffled with a fixed seed so it is reproducible.
 
-Do not put all images into one folder. The folder name is how the training script learns the label.
+Optional split settings:
+
+```powershell
+python src/prepare_dataset.py --train-ratio 0.8 --val-ratio 0.1 --test-ratio 0.1 --seed 42 --clear-existing
+```
 
 ## Train
 
