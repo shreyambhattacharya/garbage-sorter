@@ -69,7 +69,7 @@ Do not put all images into one folder. The folder name is how the training scrip
 
 ## Import Online Dataset
 
-If you downloaded a waste dataset that already has class folders like `cardboard`, `glass`, `metal`, `paper`, `plastic`, `trash`, `biological`, or `organic`, import it into this project's raw folders with:
+If you downloaded a waste dataset that already has class folders like `cans_all_type`, `glass_containers`, `paper_products`, `plastic_bottles`, `food_scraps`, `yard_trimmings`, `diapers`, or `styrofoam_product`, import it into this project's raw folders with:
 
 ```powershell
 python src/import_online_dataset.py "C:\Users\shrey\Downloads\waste_dataset"
@@ -85,11 +85,11 @@ data/raw/recycling/
 
 Common mappings:
 
-- `cardboard`, `paper`, `glass`, `metal`, `plastic`, `recyclable`, `recycling` -> `recycling`
-- `biological`, `organic`, `compost`, `food`, `food_waste`, `vegetable`, `fruit` -> `compost`
-- `trash`, `garbage`, `landfill`, `non-recyclable`, `non_recyclable`, `wrappers`, `foam`, `styrofoam` -> `landfill`
+- `cans_all_type`, `cans`, `aluminum_cans`, `metal_cans`, `glass_containers`, `paper_products`, `cardboard`, `plastic_bottles`, `plastic_containers` -> `recycling`
+- `coffee_tea_bags`, `egg_shells`, `food_scraps`, `kitchen_waste`, `yard_trimmings`, `organic`, `biological`, `compost`, `food_waste`, `fruit`, `vegetable` -> `compost`
+- `ceramic_product`, `diapers`, `sanitary_napkin`, `platics_bags_wrappers`, `plastics_bags_wrappers`, `plastic_bags_wrappers`, `stiroform_product`, `stroform_product`, `styrofoam_product`, `foam`, `trash`, `garbage`, `non-recyclable` -> `landfill`
 
-Classes such as `hazardous`, `battery`, `batteries`, `electronics`, `e-waste`, `clothes`, `shoes`, `medical`, and `unknown` are ignored.
+Classes such as `batteries`, `battery`, `e-waste`, `electronics`, `paints`, `pesticides`, `hazardous`, `medical`, and `unknown` are ignored.
 
 To limit how many images are copied into each final class:
 
@@ -97,10 +97,18 @@ To limit how many images are copied into each final class:
 python src/import_online_dataset.py "C:\Users\shrey\Downloads\waste_dataset" --max-per-class 300
 ```
 
+When `--max-per-class` is used, the importer balances the copied images across the matching source class folders instead of filling a final class from only the first matching folder.
+
 To clear existing images from `data/raw` before importing:
 
 ```powershell
 python src/import_online_dataset.py "C:\Users\shrey\Downloads\waste_dataset" --max-per-class 300 --clear-existing
+```
+
+After importing, check image counts with:
+
+```powershell
+python src/dataset_report.py
 ```
 
 ## Prepare Dataset

@@ -10,20 +10,45 @@ from dataset_utils import create_required_folders, iter_image_files
 
 
 SOURCE_CLASS_TO_TARGET = {
-    "cardboard": "recycling",
-    "paper": "recycling",
+    "cans_all_type": "recycling",
+    "cans": "recycling",
+    "aluminum_cans": "recycling",
+    "metal_cans": "recycling",
+    "glass_containers": "recycling",
     "glass": "recycling",
+    "paper_products": "recycling",
+    "paper": "recycling",
+    "cardboard": "recycling",
+    "plastic_bottles": "recycling",
+    "plastic_bottle": "recycling",
+    "plastic_containers": "recycling",
     "metal": "recycling",
     "plastic": "recycling",
     "recyclable": "recycling",
     "recycling": "recycling",
+    "coffee_tea_bags": "compost",
+    "egg_shells": "compost",
+    "food_scraps": "compost",
+    "kitchen_waste": "compost",
+    "yard_trimmings": "compost",
     "biological": "compost",
     "organic": "compost",
     "compost": "compost",
     "food": "compost",
     "food_waste": "compost",
-    "vegetable": "compost",
     "fruit": "compost",
+    "vegetable": "compost",
+    "ceramic_product": "landfill",
+    "diapers": "landfill",
+    "sanitary_napkin": "landfill",
+    "platics_bags_wrappers": "landfill",
+    "plastics_bags_wrappers": "landfill",
+    "plastic_bags_wrappers": "landfill",
+    "stiroform_product": "landfill",
+    "stroform_product": "landfill",
+    "styrofoam_product": "landfill",
+    "styrofoam": "landfill",
+    "foam": "landfill",
     "trash": "landfill",
     "garbage": "landfill",
     "landfill": "landfill",
@@ -41,8 +66,8 @@ IGNORED_CLASSES = {
     "batteries",
     "electronics",
     "e_waste",
-    "clothes",
-    "shoes",
+    "paints",
+    "pesticides",
     "medical",
     "unknown",
 }
@@ -128,15 +153,51 @@ def next_destination_path(
             return candidate
 
 
+def select_balanced_images(
+    images_by_source_class: dict[str, list[Path]],
+    limit: int | None,
+) -> tuple[list[tuple[str, Path]], int]:
+    selected_images = []
+    source_class_names = sorted(images_by_source_class)
+    positions = {source_class_name: 0 for source_class_name in source_class_names}
+    total_available = sum(len(paths) for paths in images_by_source_class.values())
+
+    while limit is None or len(selected_images) < limit:
+        made_progress = False
+
+        for source_class_name in source_class_names:
+            image_paths = images_by_source_class[source_class_name]
+            position = positions[source_class_name]
+
+            if position >= len(image_paths):
+                continue
+
+            selected_images.append((source_class_name, image_paths[position]))
+            positions[source_class_name] += 1
+            made_progress = True
+
+            if limit is not None and len(selected_images) >= limit:
+                break
+
+        if not made_progress:
+            break
+
+    return selected_images, total_available - len(selected_images)
+
+
 def import_images(
     source_dataset: Path,
     max_per_class: int | None,
-) -> tuple[Counter, int, set[str], int]:
+) -> tuple[Counter, int, int, set[str], int]:
     copied_counts = Counter({class_name: 0 for class_name in CLASS_NAMES})
-    copied_this_run = Counter({class_name: 0 for class_name in CLASS_NAMES})
     ignored_count = 0
+    max_limit_skipped_count = 0
     ignored_class_names = set()
     destination_counters = defaultdict(int)
+    images_by_target_class = {
+        class_name: defaultdict(list)
+        for class_name in CLASS_NAMES
+    }
 
     image_paths = sorted(iter_image_files(source_dataset))
 
@@ -149,29 +210,34 @@ def import_images(
             ignored_class_names.add(source_class_name)
             continue
 
-        if max_per_class is not None and copied_this_run[mapped_class] >= max_per_class:
-            ignored_count += 1
-            ignored_class_names.add(source_class_name)
-            continue
+        images_by_target_class[mapped_class][source_class_name].append(image_path)
 
-        destination_dir = RAW_DIR / mapped_class
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        destination_path = next_destination_path(
-            destination_dir,
-            source_class_name,
-            image_path.suffix,
-            destination_counters,
+    for mapped_class in CLASS_NAMES:
+        selected_images, skipped_count = select_balanced_images(
+            images_by_target_class[mapped_class],
+            max_per_class,
         )
-        shutil.copy2(image_path, destination_path)
-        copied_counts[mapped_class] += 1
-        copied_this_run[mapped_class] += 1
+        max_limit_skipped_count += skipped_count
 
-    return copied_counts, ignored_count, ignored_class_names, len(image_paths)
+        for source_class_name, image_path in selected_images:
+            destination_dir = RAW_DIR / mapped_class
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            destination_path = next_destination_path(
+                destination_dir,
+                source_class_name,
+                image_path.suffix,
+                destination_counters,
+            )
+            shutil.copy2(image_path, destination_path)
+            copied_counts[mapped_class] += 1
+
+    return copied_counts, ignored_count, max_limit_skipped_count, ignored_class_names, len(image_paths)
 
 
 def print_summary(
     copied_counts: Counter,
     ignored_count: int,
+    max_limit_skipped_count: int,
     ignored_class_names: set[str],
     scanned_image_count: int,
 ) -> None:
@@ -182,6 +248,7 @@ def print_summary(
     print(f"Copied to compost: {copied_counts['compost']}")
     print(f"Copied to recycling: {copied_counts['recycling']}")
     print(f"Ignored: {ignored_count}")
+    print(f"Skipped by --max-per-class: {max_limit_skipped_count}")
 
     if ignored_class_names:
         print("Ignored class names:")
@@ -205,11 +272,23 @@ def main() -> int:
         removed_count = clear_existing_raw_images()
         print(f"Cleared {removed_count} existing image files from data/raw.")
 
-    copied_counts, ignored_count, ignored_class_names, scanned_image_count = import_images(
+    (
+        copied_counts,
+        ignored_count,
+        max_limit_skipped_count,
+        ignored_class_names,
+        scanned_image_count,
+    ) = import_images(
         source_dataset,
         args.max_per_class,
     )
-    print_summary(copied_counts, ignored_count, ignored_class_names, scanned_image_count)
+    print_summary(
+        copied_counts,
+        ignored_count,
+        max_limit_skipped_count,
+        ignored_class_names,
+        scanned_image_count,
+    )
 
     if scanned_image_count == 0:
         print(
