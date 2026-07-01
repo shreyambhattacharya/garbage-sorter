@@ -1,4 +1,7 @@
+import csv
+import shutil
 import sys
+from pathlib import Path
 
 from config import (
     BATCH_SIZE,
@@ -6,10 +9,16 @@ from config import (
     IMAGE_SIZE,
     IMAGENET_MEAN,
     IMAGENET_STD,
+    LOGS_DIR,
     MODEL_PATH,
+    SUPPORTED_IMAGE_EXTENSIONS,
     TEST_DIR,
 )
 from dataset_utils import DatasetError, create_required_folders, validate_dataset_split
+
+
+MISCLASSIFIED_CSV_PATH = LOGS_DIR / "misclassified.csv"
+MISCLASSIFIED_IMAGES_DIR = LOGS_DIR / "misclassified_images"
 
 
 def load_evaluation_dependencies():
@@ -60,6 +69,53 @@ def print_confusion_matrix(matrix, class_names):
         print(class_name[:12].ljust(14) + values)
 
 
+def prepare_misclassified_output_folder() -> None:
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    MISCLASSIFIED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    for path in MISCLASSIFIED_IMAGES_DIR.rglob("*"):
+        if path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
+            path.unlink()
+
+    subfolders = [path for path in MISCLASSIFIED_IMAGES_DIR.rglob("*") if path.is_dir()]
+    for folder in sorted(subfolders, key=lambda path: len(path.parts), reverse=True):
+        try:
+            folder.rmdir()
+        except OSError:
+            pass
+
+
+def unique_destination_path(destination_dir: Path, source_path: Path) -> Path:
+    candidate = destination_dir / source_path.name
+    if not candidate.exists():
+        return candidate
+
+    counter = 1
+    while True:
+        candidate = destination_dir / f"{source_path.stem}_{counter}{source_path.suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def save_misclassified_examples(misclassified_examples: list[dict]) -> None:
+    prepare_misclassified_output_folder()
+
+    fieldnames = ["image_path", "actual_class", "predicted_class", "confidence"]
+    with MISCLASSIFIED_CSV_PATH.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(misclassified_examples)
+
+    for example in misclassified_examples:
+        source_path = Path(example["image_path"])
+        folder_name = f"actual_{example['actual_class']}_pred_{example['predicted_class']}"
+        destination_dir = MISCLASSIFIED_IMAGES_DIR / folder_name
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        destination_path = unique_destination_path(destination_dir, source_path)
+        shutil.copy2(source_path, destination_path)
+
+
 def main() -> int:
     create_required_folders()
 
@@ -100,24 +156,49 @@ def main() -> int:
     per_class_total = {class_name: 0 for class_name in class_names}
     all_predictions = []
     all_labels = []
+    misclassified_examples = []
+    dataset_index = 0
 
     with torch.no_grad():
         for images, labels in test_loader:
             images = images.to(device)
             labels = labels.to(device)
             outputs = model(images)
+            probabilities = torch.softmax(outputs, dim=1)
             predictions = torch.argmax(outputs, dim=1)
+            confidences = probabilities.max(dim=1).values
 
             total_correct += (predictions == labels).sum().item()
             total_examples += labels.size(0)
 
-            for label, prediction in zip(labels.cpu().tolist(), predictions.cpu().tolist()):
-                class_name = class_names[label]
-                per_class_total[class_name] += 1
+            labels_list = labels.cpu().tolist()
+            predictions_list = predictions.cpu().tolist()
+            confidences_list = confidences.cpu().tolist()
+
+            for label, prediction, confidence in zip(
+                labels_list,
+                predictions_list,
+                confidences_list,
+            ):
+                actual_class = class_names[label]
+                predicted_class = class_names[prediction]
+                per_class_total[actual_class] += 1
                 if label == prediction:
-                    per_class_correct[class_name] += 1
+                    per_class_correct[actual_class] += 1
+                else:
+                    image_path = Path(test_dataset.samples[dataset_index][0])
+                    misclassified_examples.append(
+                        {
+                            "image_path": str(image_path),
+                            "actual_class": actual_class,
+                            "predicted_class": predicted_class,
+                            "confidence": f"{confidence:.4f}",
+                        }
+                    )
+
                 all_labels.append(label)
                 all_predictions.append(prediction)
+                dataset_index += 1
 
     overall_accuracy = total_correct / max(total_examples, 1)
     print(f"Overall accuracy: {overall_accuracy:.4f}")
@@ -135,6 +216,10 @@ def main() -> int:
     )
     print("\nConfusion matrix:")
     print_confusion_matrix(matrix, class_names)
+
+    save_misclassified_examples(misclassified_examples)
+    print("\nSaved misclassified examples to logs/misclassified.csv")
+    print("Saved misclassified images to logs/misclassified_images/")
 
     return 0
 
