@@ -265,6 +265,24 @@ When `--image` is provided, no camera is required.
 - [Raspberry Pi Setup](docs/RASPBERRY_PI_SETUP.md)
 - [STM32 Integration Plan](docs/STM32_INTEGRATION_PLAN.md)
 
+## Hardware Diagnostics
+
+Use `src/hardware_diagnostics.py` to test the software, camera, simulator, and STM32 serial path one piece at a time.
+
+```powershell
+python src/hardware_diagnostics.py --check-model
+python src/hardware_diagnostics.py --image data/test/recycling/example.jpg
+python src/hardware_diagnostics.py --check-camera --camera opencv
+python src/hardware_diagnostics.py --check-camera --camera picamera2
+python src/hardware_diagnostics.py --check-sim
+python src/hardware_diagnostics.py --check-serial-ping --port COM3
+python src/hardware_diagnostics.py --check-serial-ping --port /dev/ttyACM0
+python src/hardware_diagnostics.py --check-serial-sort recycling --port COM3
+python src/hardware_diagnostics.py --full-sim --image data/test/recycling/example.jpg
+```
+
+Run serial sort diagnostics only with motors disconnected or STM32 dry-run firmware.
+
 ## Webcam Demo
 
 ```powershell

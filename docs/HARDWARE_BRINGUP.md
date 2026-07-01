@@ -2,6 +2,18 @@
 
 This project should move from laptop-only simulation to Raspberry Pi + STM32 hardware in small, testable phases. Test each component by itself before connecting the full system.
 
+## Recommended Diagnostics Order
+
+Use `src/hardware_diagnostics.py` before connecting real actuators:
+
+1. Run `python src/hardware_diagnostics.py --check-model`.
+2. Run `python src/hardware_diagnostics.py --image data/test/recycling/example.jpg` with a known test image.
+3. Run `python src/hardware_diagnostics.py --check-camera --camera opencv` or `python src/hardware_diagnostics.py --check-camera --camera picamera2`.
+4. Run `python src/hardware_diagnostics.py --check-sim`.
+5. Run `python src/hardware_diagnostics.py --check-serial-ping --port COM3` or `python src/hardware_diagnostics.py --check-serial-ping --port /dev/ttyACM0` with the STM32 connected.
+6. Run `python src/hardware_diagnostics.py --check-serial-sort recycling --port COM3` only with motors disconnected or STM32 dry-run firmware.
+7. Only then test actuators separately.
+
 ## Phase 1: Raspberry Pi Setup
 
 - Clone the repo onto the Raspberry Pi.
