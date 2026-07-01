@@ -1,0 +1,6 @@
+# Treat STM32 vendor/HAL code as third-party code for GitHub language stats
+firmware/stm32/**/Drivers/** linguist-vendored
+
+# Treat generated startup/project support files as generated
+firmware/stm32/**/Core/Startup/** linguist-generated
+firmware/stm32/**/*.ld linguist-generated
