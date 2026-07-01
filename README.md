@@ -234,6 +234,30 @@ The app repeatedly asks for an image path. It classifies the image, prints the p
 
 Type `q` or `quit` to exit.
 
+## Sorter Runner
+
+`src/run_sorter.py` is the simulation-first main app for the future Raspberry Pi sorter. It uses the trained ML model, applies the confidence threshold, logs predictions, and sends accepted predictions to either simulated hardware or serial hardware.
+
+Run with an existing saved image and simulated hardware:
+
+```powershell
+python src/run_sorter.py --hardware sim --image data/test/recycling/example.jpg
+```
+
+Run with simulated hardware and OpenCV camera capture:
+
+```powershell
+python src/run_sorter.py --hardware sim --camera opencv
+```
+
+Future Raspberry Pi mode with Picamera2 and STM32 serial hardware:
+
+```powershell
+python src/run_sorter.py --hardware serial --camera picamera2
+```
+
+When `--image` is provided, no camera is required.
+
 ## Webcam Demo
 
 ```powershell
