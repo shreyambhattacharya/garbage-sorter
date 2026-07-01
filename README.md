@@ -1,12 +1,12 @@
 # Garbage Sorter
 
-This is a laptop-only machine learning prototype for sorting trash item images into three classes:
+This is a garbage sorting machine learning prototype for sorting trash item images into three classes:
 
 - landfill
 - compost
 - recycling
 
-It uses Python, PyTorch, torchvision, and MobileNetV3 Small transfer learning. No Raspberry Pi, STM32, camera hardware, motors, actuators, chute, or ultrasonic sensor is required yet. The hardware behavior is simulated in code.
+It uses Python, PyTorch, torchvision, and MobileNetV3 Small transfer learning. The laptop workflow still works without any hardware, and the repo now also includes a hardware-ready Raspberry Pi/STM32 integration scaffold for future camera capture, serial commands, and simulated or real sorter hardware.
 
 ## Project Structure
 
