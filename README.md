@@ -111,6 +111,45 @@ After importing, check image counts with:
 python src/dataset_report.py
 ```
 
+## Collect Camera Images
+
+You can also collect real images directly into `data/raw` with a laptop webcam, USB camera, or Raspberry Pi camera.
+
+OpenCV laptop/USB camera mode:
+
+```powershell
+python src/collect_pi_images.py --class recycling
+python src/collect_pi_images.py --class compost
+python src/collect_pi_images.py --class landfill
+```
+
+In OpenCV mode, a preview window opens.
+
+- Press `SPACE` to capture an image.
+- Press `q` to quit.
+
+Images are saved as:
+
+```text
+data/raw/recycling/recycling_pi_000001.jpg
+data/raw/compost/compost_pi_000001.jpg
+data/raw/landfill/landfill_pi_000001.jpg
+```
+
+To use a different OpenCV camera index:
+
+```powershell
+python src/collect_pi_images.py --class recycling --camera opencv --camera-index 1
+```
+
+On a Raspberry Pi with Picamera2 installed:
+
+```powershell
+python src/collect_pi_images.py --class recycling --camera picamera2
+```
+
+Picamera2 mode uses an Enter-to-capture fallback if a preview window is not available.
+
 ## Prepare Dataset
 
 Run this command to copy raw images into an 80/10/10 train/validation/test split:
