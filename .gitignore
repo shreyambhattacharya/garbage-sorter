@@ -18,6 +18,10 @@ Thumbs.db
 logs/*
 !logs/.gitkeep
 
+# Captured images from future camera workflows
+captures/*
+!captures/.gitkeep
+
 # Trained model checkpoints can be large; keep the folder, not generated weights.
 models/*
 !models/.gitkeep
