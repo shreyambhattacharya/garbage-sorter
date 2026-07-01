@@ -258,6 +258,13 @@ python src/run_sorter.py --hardware serial --camera picamera2
 
 When `--image` is provided, no camera is required.
 
+## Hardware Integration Docs
+
+- [Hardware Bringup](docs/HARDWARE_BRINGUP.md)
+- [Serial Protocol](docs/SERIAL_PROTOCOL.md)
+- [Raspberry Pi Setup](docs/RASPBERRY_PI_SETUP.md)
+- [STM32 Integration Plan](docs/STM32_INTEGRATION_PLAN.md)
+
 ## Webcam Demo
 
 ```powershell
