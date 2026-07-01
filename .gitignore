@@ -34,3 +34,14 @@ data/**/*
 # Temporary files
 *.tmp
 *.log
+
+# STM32CubeIDE generated build and workspace output
+firmware/stm32/**/Debug/
+firmware/stm32/**/Release/
+firmware/stm32/**/.settings/
+firmware/stm32/**/*.elf
+firmware/stm32/**/*.bin
+firmware/stm32/**/*.map
+firmware/stm32/**/*.list
+firmware/stm32/**/*.o
+firmware/stm32/**/*.d
