@@ -21,8 +21,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
 #include <string.h>
+#include "sorter_hardware.h"
 #include "sorter_protocol.h"
+#include "sorter_state.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -53,8 +56,13 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static void UART_SendLine(const char *line);
-static void UART_SendProtocolResponse(const SorterProtocolResponse *response);
+static void UART_SendProtocolResponse(const SorterProtocolResult *result);
 static void UART_ProcessCommandLine(const char *command_line);
+static void UART_HandleProtocolAction(const SorterProtocolResult *result);
+static void UART_HandleSortCommand(const SorterProtocolResult *result);
+static void UART_HandleTestCommand(SorterProtocolAction action);
+static void UART_SendHardwareResult(const char *test_name, SorterHardwareStatus status);
+static void UART_SendUltrasonicReading(const UltrasonicReading *reading);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -65,24 +73,145 @@ static void UART_SendLine(const char *line)
   HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
 }
 
-static void UART_SendProtocolResponse(const SorterProtocolResponse *response)
+static void UART_SendProtocolResponse(const SorterProtocolResult *result)
 {
-  for (uint8_t i = 0; i < response->line_count; i++)
+  for (uint8_t i = 0; i < result->line_count; i++)
   {
-    UART_SendLine(response->lines[i]);
-  }
-
-  if (response->accepted_sort)
-  {
-    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+    UART_SendLine(result->lines[i]);
   }
 }
 
 static void UART_ProcessCommandLine(const char *command_line)
 {
-  SorterProtocolResponse response;
-  SorterProtocol_HandleLine(command_line, &response);
-  UART_SendProtocolResponse(&response);
+  SorterProtocolResult result;
+  SorterProtocol_HandleLine(command_line, &result);
+  UART_SendProtocolResponse(&result);
+  UART_HandleProtocolAction(&result);
+}
+
+static void UART_HandleProtocolAction(const SorterProtocolResult *result)
+{
+  switch (result->action)
+  {
+    case SORTER_PROTOCOL_ACTION_SORT:
+      UART_HandleSortCommand(result);
+      break;
+    case SORTER_PROTOCOL_ACTION_TEST_DIVERTERS:
+    case SORTER_PROTOCOL_ACTION_TEST_TRAPDOOR:
+    case SORTER_PROTOCOL_ACTION_TEST_ULTRASONIC:
+    case SORTER_PROTOCOL_ACTION_TEST_DISPLAY:
+      UART_HandleTestCommand(result->action);
+      break;
+    case SORTER_PROTOCOL_ACTION_RESPOND_ONLY:
+    default:
+      break;
+  }
+}
+
+static void UART_HandleSortCommand(const SorterProtocolResult *result)
+{
+  char response_line[UART_COMMAND_BUFFER_LENGTH];
+  SorterHardwareStatus hardware_status;
+
+  SorterState_Set(SORTER_STATE_COMMAND_RECEIVED);
+  snprintf(response_line, sizeof(response_line), "ACK id=%d", result->command_id);
+  UART_SendLine(response_line);
+  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+
+  SorterState_Set(SORTER_STATE_SORTING);
+  hardware_status = SorterHardware_ExecuteSort(result->class_name);
+
+  if (hardware_status == SORTER_HW_STATUS_OK)
+  {
+    SorterState_Set(SORTER_STATE_IDLE);
+    snprintf(response_line, sizeof(response_line), "DONE id=%d", result->command_id);
+    UART_SendLine(response_line);
+  }
+  else
+  {
+    SorterState_Set(SORTER_STATE_ERROR);
+    snprintf(
+        response_line,
+        sizeof(response_line),
+        "ERROR id=%d message=%s",
+        result->command_id,
+        SorterHardwareStatus_ToMessage(hardware_status));
+    UART_SendLine(response_line);
+  }
+}
+
+static void UART_HandleTestCommand(SorterProtocolAction action)
+{
+  SorterHardwareStatus status;
+  SorterBinReadings readings;
+
+  switch (action)
+  {
+    case SORTER_PROTOCOL_ACTION_TEST_DIVERTERS:
+      UART_SendLine("STATUS test=TEST_DIVERTERS result=START");
+      status = SorterHardware_TestDiverters();
+      UART_SendHardwareResult("TEST_DIVERTERS", status);
+      break;
+    case SORTER_PROTOCOL_ACTION_TEST_TRAPDOOR:
+      UART_SendLine("STATUS test=TEST_TRAPDOOR result=START");
+      status = SorterHardware_TestTrapdoor();
+      UART_SendHardwareResult("TEST_TRAPDOOR", status);
+      break;
+    case SORTER_PROTOCOL_ACTION_TEST_ULTRASONIC:
+      UART_SendLine("STATUS test=TEST_ULTRASONIC result=START");
+      status = SorterHardware_TestUltrasonic(&readings);
+      if (status != SORTER_HW_STATUS_NOT_CONFIGURED)
+      {
+        UART_SendUltrasonicReading(&readings.landfill);
+        UART_SendUltrasonicReading(&readings.compost);
+        UART_SendUltrasonicReading(&readings.recycling);
+      }
+      UART_SendHardwareResult("TEST_ULTRASONIC", status);
+      break;
+    case SORTER_PROTOCOL_ACTION_TEST_DISPLAY:
+      UART_SendLine("STATUS test=TEST_DISPLAY result=START");
+      status = SorterHardware_TestDisplay();
+      UART_SendHardwareResult("TEST_DISPLAY", status);
+      break;
+    default:
+      UART_SendLine("ERROR id=0 message=unknown_test");
+      break;
+  }
+}
+
+static void UART_SendHardwareResult(const char *test_name, SorterHardwareStatus status)
+{
+  char response_line[UART_COMMAND_BUFFER_LENGTH];
+
+  if (status == SORTER_HW_STATUS_OK)
+  {
+    snprintf(response_line, sizeof(response_line), "DONE test=%s", test_name);
+  }
+  else
+  {
+    snprintf(
+        response_line,
+        sizeof(response_line),
+        "ERROR id=0 message=%s",
+        SorterHardwareStatus_ToMessage(status));
+  }
+
+  UART_SendLine(response_line);
+}
+
+static void UART_SendUltrasonicReading(const UltrasonicReading *reading)
+{
+  char response_line[UART_COMMAND_BUFFER_LENGTH];
+  int distance_cm_x100 = (int)((reading->distance_cm * 100.0f) + 0.5f);
+
+  snprintf(
+      response_line,
+      sizeof(response_line),
+      "DISTANCE class=%s valid=%u cm_x100=%d",
+      SorterClass_ToString(reading->bin_class),
+      reading->valid,
+      distance_cm_x100);
+  UART_SendLine(response_line);
 }
 /* USER CODE END 0 */
 
@@ -123,6 +252,7 @@ int main(void)
   uint8_t discarding_long_command = 0;
 
   SorterProtocol_Init();
+  (void)SorterHardware_Init();
   UART_SendLine("STM32 dry-run sorter firmware ready");
   /* USER CODE END 2 */
 

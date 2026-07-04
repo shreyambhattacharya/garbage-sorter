@@ -8,10 +8,9 @@
 
 #define SORTER_COMMAND_BUFFER_LENGTH 128
 
-static void clear_response(SorterProtocolResponse *response);
-static void add_response_line(SorterProtocolResponse *response, const char *format, ...);
-static void handle_sort_command(const char *line, SorterProtocolResponse *response);
-static int is_valid_class(const char *class_name);
+static void clear_result(SorterProtocolResult *result);
+static void add_response_line(SorterProtocolResult *result, const char *format, ...);
+static void handle_sort_command(const char *line, SorterProtocolResult *result);
 static int parse_positive_int(const char *text, int *value);
 static int parse_confidence(const char *text, float *value);
 
@@ -20,52 +19,79 @@ void SorterProtocol_Init(void)
   SorterState_Init();
 }
 
-void SorterProtocol_HandleLine(const char *line, SorterProtocolResponse *response)
+void SorterProtocol_HandleLine(const char *line, SorterProtocolResult *result)
 {
-  clear_response(response);
+  clear_result(result);
 
   if (strcmp(line, "PING") == 0)
   {
-    add_response_line(response, "PONG");
+    add_response_line(result, "PONG");
     return;
   }
 
   if (strcmp(line, "STATUS") == 0)
   {
-    add_response_line(response, "STATUS state=%s", SorterState_ToString(SorterState_Get()));
+    add_response_line(result, "STATUS state=%s", SorterState_ToString(SorterState_Get()));
     return;
   }
 
   if (strcmp(line, "RESET") == 0)
   {
     SorterState_Reset();
-    add_response_line(response, "STATUS state=IDLE");
+    add_response_line(result, "STATUS state=IDLE");
     return;
   }
 
   if (strncmp(line, "SORT", 4) == 0 && (line[4] == '\0' || line[4] == ' '))
   {
-    handle_sort_command(line, response);
+    handle_sort_command(line, result);
+    return;
+  }
+
+  if (strcmp(line, "TEST_DIVERTERS") == 0)
+  {
+    result->action = SORTER_PROTOCOL_ACTION_TEST_DIVERTERS;
+    return;
+  }
+
+  if (strcmp(line, "TEST_TRAPDOOR") == 0)
+  {
+    result->action = SORTER_PROTOCOL_ACTION_TEST_TRAPDOOR;
+    return;
+  }
+
+  if (strcmp(line, "TEST_ULTRASONIC") == 0)
+  {
+    result->action = SORTER_PROTOCOL_ACTION_TEST_ULTRASONIC;
+    return;
+  }
+
+  if (strcmp(line, "TEST_DISPLAY") == 0)
+  {
+    result->action = SORTER_PROTOCOL_ACTION_TEST_DISPLAY;
     return;
   }
 
   SorterState_Set(SORTER_STATE_ERROR);
-  add_response_line(response, "ERROR id=0 message=unknown_command");
+  add_response_line(result, "ERROR id=0 message=unknown_command");
 }
 
-static void clear_response(SorterProtocolResponse *response)
+static void clear_result(SorterProtocolResult *result)
 {
-  response->line_count = 0;
-  response->accepted_sort = 0;
+  result->line_count = 0;
+  result->action = SORTER_PROTOCOL_ACTION_RESPOND_ONLY;
+  result->class_name = SORTER_CLASS_UNKNOWN;
+  result->confidence = 0.0f;
+  result->command_id = 0;
   for (uint8_t i = 0; i < SORTER_PROTOCOL_MAX_RESPONSE_LINES; i++)
   {
-    response->lines[i][0] = '\0';
+    result->lines[i][0] = '\0';
   }
 }
 
-static void add_response_line(SorterProtocolResponse *response, const char *format, ...)
+static void add_response_line(SorterProtocolResult *result, const char *format, ...)
 {
-  if (response->line_count >= SORTER_PROTOCOL_MAX_RESPONSE_LINES)
+  if (result->line_count >= SORTER_PROTOCOL_MAX_RESPONSE_LINES)
   {
     return;
   }
@@ -73,16 +99,16 @@ static void add_response_line(SorterProtocolResponse *response, const char *form
   va_list args;
   va_start(args, format);
   vsnprintf(
-      response->lines[response->line_count],
+      result->lines[result->line_count],
       SORTER_PROTOCOL_MAX_RESPONSE_LENGTH,
       format,
       args);
   va_end(args);
 
-  response->line_count++;
+  result->line_count++;
 }
 
-static void handle_sort_command(const char *line, SorterProtocolResponse *response)
+static void handle_sort_command(const char *line, SorterProtocolResult *result)
 {
   char command_copy[SORTER_COMMAND_BUFFER_LENGTH];
   char *class_value = NULL;
@@ -90,6 +116,7 @@ static void handle_sort_command(const char *line, SorterProtocolResponse *respon
   char *id_value = NULL;
   int command_id = 0;
   float confidence = 0.0f;
+  SorterClass parsed_class = SORTER_CLASS_UNKNOWN;
 
   strncpy(command_copy, line, sizeof(command_copy) - 1);
   command_copy[sizeof(command_copy) - 1] = '\0';
@@ -116,60 +143,50 @@ static void handle_sort_command(const char *line, SorterProtocolResponse *respon
   if (id_value == NULL)
   {
     SorterState_Set(SORTER_STATE_ERROR);
-    add_response_line(response, "ERROR id=0 message=missing_id");
+    add_response_line(result, "ERROR id=0 message=missing_id");
     return;
   }
 
   if (!parse_positive_int(id_value, &command_id))
   {
     SorterState_Set(SORTER_STATE_ERROR);
-    add_response_line(response, "ERROR id=0 message=invalid_id");
+    add_response_line(result, "ERROR id=0 message=invalid_id");
     return;
   }
 
   if (class_value == NULL)
   {
     SorterState_Set(SORTER_STATE_ERROR);
-    add_response_line(response, "ERROR id=%d message=missing_class", command_id);
+    add_response_line(result, "ERROR id=%d message=missing_class", command_id);
     return;
   }
 
   if (confidence_value == NULL)
   {
     SorterState_Set(SORTER_STATE_ERROR);
-    add_response_line(response, "ERROR id=%d message=missing_confidence", command_id);
+    add_response_line(result, "ERROR id=%d message=missing_confidence", command_id);
     return;
   }
 
-  if (!is_valid_class(class_value))
+  parsed_class = SorterClass_FromString(class_value);
+  if (parsed_class == SORTER_CLASS_UNKNOWN)
   {
     SorterState_Set(SORTER_STATE_ERROR);
-    add_response_line(response, "ERROR id=%d message=invalid_class", command_id);
+    add_response_line(result, "ERROR id=%d message=invalid_class", command_id);
     return;
   }
 
   if (!parse_confidence(confidence_value, &confidence))
   {
     SorterState_Set(SORTER_STATE_ERROR);
-    add_response_line(response, "ERROR id=%d message=invalid_confidence", command_id);
+    add_response_line(result, "ERROR id=%d message=invalid_confidence", command_id);
     return;
   }
 
-  SorterState_Set(SORTER_STATE_COMMAND_RECEIVED);
-  add_response_line(response, "ACK id=%d", command_id);
-
-  SorterState_Set(SORTER_STATE_SORTING);
-  response->accepted_sort = 1;
-
-  SorterState_Set(SORTER_STATE_IDLE);
-  add_response_line(response, "DONE id=%d", command_id);
-}
-
-static int is_valid_class(const char *class_name)
-{
-  return strcmp(class_name, "landfill") == 0 ||
-         strcmp(class_name, "compost") == 0 ||
-         strcmp(class_name, "recycling") == 0;
+  result->action = SORTER_PROTOCOL_ACTION_SORT;
+  result->class_name = parsed_class;
+  result->confidence = confidence;
+  result->command_id = command_id;
 }
 
 static int parse_positive_int(const char *text, int *value)
