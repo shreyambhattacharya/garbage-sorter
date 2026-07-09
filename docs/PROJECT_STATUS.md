@@ -50,6 +50,18 @@ python src/hardware_diagnostics.py --test-trapdoor --port COM6
 python src/hardware_diagnostics.py --check-serial-sort recycling --port COM6
 ```
 
+Evaluation artifacts:
+
+```powershell
+python src/evaluate.py --save-confusion-matrix --save-summary
+```
+
+Latency artifacts:
+
+```powershell
+python src/measure_latency.py --port COM6 --image data/test/recycling/example.jpg --class recycling --trials 30
+```
+
 Unit tests:
 
 ```powershell
@@ -63,3 +75,29 @@ python -m pytest
 - TFT display is not yet verified.
 - Full physical sorting reliability is still in progress and depends on mechanical calibration.
 - Servo tests should be run no-load before attaching the mechanism.
+- README result tables are placeholders until `results/evaluation_summary.md`, `results/confusion_matrix.png`, and `results/latency_summary.md` are generated from current runs.
+
+## GitHub Metadata Reminder
+
+Codex cannot reliably set GitHub repository metadata from code. Set these manually in the GitHub repo settings.
+
+Suggested description:
+
+```text
+Embedded ML garbage sorter using Raspberry Pi image classification and STM32 servo control for physical landfill/compost/recycling routing.
+```
+
+Suggested topics:
+
+```text
+embedded-systems
+machine-learning
+computer-vision
+stm32
+raspberry-pi
+pytorch
+uart
+servo-control
+robotics
+waste-sorting
+```

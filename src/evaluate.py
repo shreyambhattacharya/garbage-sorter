@@ -1,6 +1,8 @@
+import argparse
 import csv
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from config import (
@@ -11,6 +13,7 @@ from config import (
     IMAGENET_STD,
     LOGS_DIR,
     MODEL_PATH,
+    RESULTS_DIR,
     SUPPORTED_IMAGE_EXTENSIONS,
     TEST_DIR,
 )
@@ -19,6 +22,23 @@ from dataset_utils import DatasetError, create_required_folders, validate_datase
 
 MISCLASSIFIED_CSV_PATH = LOGS_DIR / "misclassified.csv"
 MISCLASSIFIED_IMAGES_DIR = LOGS_DIR / "misclassified_images"
+CONFUSION_MATRIX_IMAGE_PATH = RESULTS_DIR / "confusion_matrix.png"
+EVALUATION_SUMMARY_PATH = RESULTS_DIR / "evaluation_summary.md"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Evaluate the trained garbage classifier.")
+    parser.add_argument(
+        "--save-confusion-matrix",
+        action="store_true",
+        help="Save a PNG confusion matrix to results/confusion_matrix.png.",
+    )
+    parser.add_argument(
+        "--save-summary",
+        action="store_true",
+        help="Save a markdown evaluation summary to results/evaluation_summary.md.",
+    )
+    return parser.parse_args()
 
 
 def load_evaluation_dependencies():
@@ -69,6 +89,106 @@ def print_confusion_matrix(matrix, class_names):
         print(class_name[:12].ljust(14) + values)
 
 
+def save_confusion_matrix_image(matrix, class_names) -> Path:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not import matplotlib to save the confusion matrix. Install requirements with:\n"
+            "pip install -r requirements.txt"
+        ) from exc
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    image = ax.imshow(matrix, interpolation="nearest", cmap="Blues")
+    fig.colorbar(image, ax=ax)
+
+    ax.set(
+        xticks=range(len(class_names)),
+        yticks=range(len(class_names)),
+        xticklabels=class_names,
+        yticklabels=class_names,
+        ylabel="Actual class",
+        xlabel="Predicted class",
+        title="Garbage Classifier Confusion Matrix",
+    )
+
+    threshold = matrix.max() / 2.0 if matrix.size else 0
+    for row_index in range(matrix.shape[0]):
+        for column_index in range(matrix.shape[1]):
+            value = int(matrix[row_index, column_index])
+            ax.text(
+                column_index,
+                row_index,
+                str(value),
+                ha="center",
+                va="center",
+                color="white" if value > threshold else "black",
+            )
+
+    fig.tight_layout()
+    fig.savefig(CONFUSION_MATRIX_IMAGE_PATH, dpi=180)
+    plt.close(fig)
+    return CONFUSION_MATRIX_IMAGE_PATH
+
+
+def format_markdown_confusion_matrix(matrix, class_names) -> str:
+    header = "| Actual \\ Predicted | " + " | ".join(class_names) + " |"
+    separator = "|---|" + "|".join("---:" for _ in class_names) + "|"
+    rows = [header, separator]
+    for class_name, row in zip(class_names, matrix):
+        rows.append("| " + class_name + " | " + " | ".join(str(int(value)) for value in row) + " |")
+    return "\n".join(rows)
+
+
+def save_evaluation_summary(
+    overall_accuracy: float,
+    per_class_accuracy: dict[str, float],
+    per_class_correct: dict[str, int],
+    per_class_total: dict[str, int],
+    matrix,
+    class_names,
+) -> Path:
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    lines = [
+        "# Evaluation Summary",
+        "",
+        f"- Timestamp: `{timestamp}`",
+        f"- Dataset split: `{TEST_DIR}`",
+        f"- Overall accuracy: `{overall_accuracy:.4f}`",
+        "",
+        "## Per-Class Accuracy",
+        "",
+        "| Class | Accuracy | Correct | Total |",
+        "|---|---:|---:|---:|",
+    ]
+
+    for class_name in class_names:
+        lines.append(
+            f"| {class_name} | {per_class_accuracy[class_name]:.4f} | "
+            f"{per_class_correct[class_name]} | {per_class_total[class_name]} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Confusion Matrix",
+            "",
+            format_markdown_confusion_matrix(matrix, class_names),
+            "",
+        ]
+    )
+
+    EVALUATION_SUMMARY_PATH.write_text("\n".join(lines), encoding="utf-8")
+    return EVALUATION_SUMMARY_PATH
+
+
 def prepare_misclassified_output_folder() -> None:
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     MISCLASSIFIED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
@@ -117,6 +237,7 @@ def save_misclassified_examples(misclassified_examples: list[dict]) -> None:
 
 
 def main() -> int:
+    args = parse_args()
     create_required_folders()
 
     if not MODEL_PATH.exists():
@@ -204,9 +325,11 @@ def main() -> int:
     print(f"Overall accuracy: {overall_accuracy:.4f}")
 
     print("\nPer-class accuracy:")
+    per_class_accuracy = {}
     for class_name in class_names:
         class_total = per_class_total[class_name]
         class_accuracy = per_class_correct[class_name] / max(class_total, 1)
+        per_class_accuracy[class_name] = class_accuracy
         print(f"{class_name}: {class_accuracy:.4f} ({per_class_correct[class_name]}/{class_total})")
 
     matrix = confusion_matrix(
@@ -216,6 +339,25 @@ def main() -> int:
     )
     print("\nConfusion matrix:")
     print_confusion_matrix(matrix, class_names)
+
+    if args.save_confusion_matrix:
+        try:
+            saved_path = save_confusion_matrix_image(matrix, class_names)
+        except RuntimeError as exc:
+            print(exc)
+            return 1
+        print(f"\nSaved confusion matrix image to {saved_path}")
+
+    if args.save_summary:
+        saved_path = save_evaluation_summary(
+            overall_accuracy,
+            per_class_accuracy,
+            per_class_correct,
+            per_class_total,
+            matrix,
+            class_names,
+        )
+        print(f"Saved evaluation summary to {saved_path}")
 
     save_misclassified_examples(misclassified_examples)
     print("\nSaved misclassified examples to logs/misclassified.csv")

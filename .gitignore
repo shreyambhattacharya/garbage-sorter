@@ -18,6 +18,14 @@ Thumbs.db
 logs/*
 !logs/.gitkeep
 
+# Final result artifacts may be committed intentionally.
+results/*
+!results/.gitkeep
+!results/confusion_matrix.png
+!results/evaluation_summary.md
+!results/latency_summary.md
+!results/latency_summary.csv
+
 # Captured images from future camera workflows
 captures/*
 !captures/.gitkeep

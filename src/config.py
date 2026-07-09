@@ -12,6 +12,7 @@ TEST_DIR = DATA_DIR / "test"
 MODELS_DIR = PROJECT_ROOT / "models"
 LOGS_DIR = PROJECT_ROOT / "logs"
 CAPTURE_DIR = PROJECT_ROOT / "captures"
+RESULTS_DIR = PROJECT_ROOT / "results"
 
 MODEL_PATH = MODELS_DIR / "garbage_classifier.pt"
 PREDICTIONS_LOG_PATH = LOGS_DIR / "predictions.csv"

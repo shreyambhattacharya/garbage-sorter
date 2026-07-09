@@ -17,6 +17,7 @@ The laptop workflow still works without hardware, while the embedded path is bei
 ```text
 Garbage Sorter/
   README.md
+  LICENSE
   requirements.txt
   data/
     raw/
@@ -37,6 +38,7 @@ Garbage Sorter/
       recycling/
   models/
   logs/
+  results/
   src/
   tests/
   docs/
@@ -56,12 +58,14 @@ Image or camera input
   -> class prediction and confidence check
   -> serial SORT command
   -> STM32 receives and validates command
-  -> STM32 moves configured servos for diverter/trapdoor sequence
+  -> STM32 command parser
+  -> diverter servo routing
+  -> dual-servo trapdoor actuation
   -> STM32 returns DONE or ERROR
   -> future ultrasonic/TFT feedback improves operator awareness
 ```
 
-Today, the ML, simulation, serial communication, STM32 command parser, and servo PWM bring-up are implemented. Physical sorting reliability still depends on mechanical calibration, object placement, and repeated hardware testing.
+Today, the ML, simulation, serial communication, STM32 command parser, and servo PWM bring-up are implemented. The SORT command path drives the configured diverter/trapdoor servo sequence; physical sorting reliability still depends on servo calibration, mechanical alignment, object placement, and repeated bench testing.
 
 ## Current Status
 
@@ -69,23 +73,38 @@ Today, the ML, simulation, serial communication, STM32 command parser, and servo
 | --- | --- |
 | ML image classifier | Implemented |
 | Dataset import/splitting | Implemented |
+| Model evaluation | Implemented |
+| Confusion matrix export | Implemented |
 | Simulation mode | Implemented |
 | Python serial protocol | Implemented |
 | STM32 `PING`/`STATUS`/`RESET`/`SORT` protocol | Implemented |
-| 4-servo PWM bring-up | Implemented locally; verify after flashing |
+| Servo PWM control | Implemented locally; verify after flashing |
+| Binary diverter routing | Implemented locally; bench-test before mechanism attachment |
+| Dual-servo trapdoor actuation | Implemented locally; bench-test before mechanism attachment |
 | Diverter/trapdoor servo test commands | Implemented |
+| End-to-end physical sort | Prototype path implemented; final reliability not claimed |
 | Ultrasonic bin fullness sensors | Scaffolded, not yet verified |
 | SPI TFT display | Scaffolded, not yet verified |
-| Full physical sorting reliability | In progress |
+| Production-ready reliability | Not claimed |
 
 ## Technical Highlights
 
-- Transfer-learning image classifier for landfill, compost, and recycling
+- Trained a MobileNetV3-based image classifier for landfill, compost, and recycling classification
 - Simulation-first hardware interface for safe laptop development
-- Plain-text UART protocol between Raspberry Pi/Python and STM32
-- STM32 firmware with command parser, state machine, and hardware abstraction layers
-- Servo PWM control for two binary diverters and a dual-servo trapdoor
-- Safety-first staged hardware bring-up with subsystem flags for servos, ultrasonic sensors, and TFT display
+- Plain-text UART protocol between the Python controller and STM32 firmware
+- STM32 firmware with command parsing, state tracking, and servo hardware abstraction
+- Controlled two binary diverter servos and a dual-servo trapdoor sequence for physical bin routing
+- Staged hardware bring-up commands for serial ping, diverter testing, trapdoor testing, and full `SORT` command execution
+
+## Demo
+
+The intended prototype demo shows the full pipeline: item image capture, ML classification, serial command transmission, STM32-controlled diverter positioning, and trapdoor actuation.
+
+Demo media has not been added to the repo yet. Recommended files after recording the final bench test:
+
+- `captures/demo_sort_recycling.gif`
+- `captures/demo_physical_sort.mp4`
+- `captures/system_overview.jpg`
 
 ## Demo Commands
 
@@ -93,7 +112,7 @@ Train and evaluate the classifier:
 
 ```powershell
 python src/train.py
-python src/evaluate.py
+python src/evaluate.py --save-confusion-matrix --save-summary
 ```
 
 Run the simulated sorter:
@@ -109,6 +128,12 @@ python src/hardware_diagnostics.py --check-serial-ping --port COM6
 python src/hardware_diagnostics.py --test-diverters --port COM6
 python src/hardware_diagnostics.py --test-trapdoor --port COM6
 python src/hardware_diagnostics.py --check-serial-sort recycling --port COM6
+```
+
+Measure classify-to-route latency after the STM32 is flashed and connected:
+
+```powershell
+python src/measure_latency.py --port COM6 --image data/test/recycling/example.jpg --class recycling --trials 30
 ```
 
 ## Windows Setup
@@ -278,6 +303,51 @@ python src/evaluate.py
 ```
 
 This evaluates the saved model on `data/test`, then prints overall accuracy, per-class accuracy, and a confusion matrix.
+
+To save shareable result artifacts:
+
+```powershell
+python src/evaluate.py --save-confusion-matrix --save-summary
+```
+
+This writes:
+
+```text
+results/confusion_matrix.png
+results/evaluation_summary.md
+```
+
+## Results
+
+No saved evaluation or latency result artifacts were found in the repo during this documentation pass. Run the commands above and replace the placeholder values below with the latest measured results before final submission.
+
+Model evaluation on held-out test set:
+
+| Metric | Result |
+|---|---:|
+| Overall test accuracy | [INSERT ACTUAL VALUE] |
+| Landfill accuracy | [INSERT ACTUAL VALUE] |
+| Compost accuracy | [INSERT ACTUAL VALUE] |
+| Recycling accuracy | [INSERT ACTUAL VALUE] |
+
+Confusion matrix:
+
+| Actual \ Predicted | Landfill | Compost | Recycling |
+|---|---:|---:|---:|
+| Landfill | [INSERT] | [INSERT] | [INSERT] |
+| Compost | [INSERT] | [INSERT] | [INSERT] |
+| Recycling | [INSERT] | [INSERT] | [INSERT] |
+
+End-to-end classify-to-route latency:
+
+| Metric | Result |
+|---|---:|
+| Average latency | [INSERT ACTUAL LATENCY] |
+| Minimum latency | [INSERT ACTUAL LATENCY] |
+| Maximum latency | [INSERT ACTUAL LATENCY] |
+| Trials | [INSERT TRIAL COUNT] |
+
+Latency includes image capture or image load, preprocessing, MobileNetV3 inference, confidence thresholding, serial `SORT` command transmission, STM32 `ACK`/`DONE` response handling, diverter servo movement, and trapdoor open/close motion.
 
 ## Predict One Image
 
