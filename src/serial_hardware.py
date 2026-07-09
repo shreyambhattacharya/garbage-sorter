@@ -13,6 +13,7 @@ from serial_protocol import (
     make_ping_command,
     make_sort_command,
     make_status_command,
+    make_test_command,
     parse_response,
 )
 
@@ -133,6 +134,24 @@ class SerialHardwareInterface(HardwareInterface):
 
         return {"connected": True, "state": response["state"]}
 
+    def run_test_command(self, test_name: str, timeout_seconds: float | None = None) -> bool:
+        if not self._ensure_connected():
+            return False
+
+        try:
+            command = make_test_command(test_name)
+        except ValueError as exc:
+            print(f"Test command error: {exc}")
+            return False
+
+        if not self._write_command(command):
+            return False
+
+        return self._read_test_response(
+            test_name,
+            timeout_seconds=timeout_seconds or self.sort_timeout_seconds,
+        )
+
     def _ensure_connected(self) -> bool:
         if self.serial_connection is not None and self.serial_connection.is_open:
             return True
@@ -207,6 +226,38 @@ class SerialHardwareInterface(HardwareInterface):
         print(f"Serial timeout: timed out waiting for {waiting_for}.")
         return None
 
+    def _read_test_response(self, test_name: str, timeout_seconds: float) -> bool:
+        deadline = time.monotonic() + timeout_seconds
+
+        while time.monotonic() < deadline:
+            line = self._read_line()
+            if line is None:
+                return False
+            if line == "":
+                continue
+
+            parsed = parse_response(line)
+            response_type = parsed.get("type")
+
+            if response_type == "MALFORMED":
+                print(f"Serial warning: malformed STM32 response: {parsed['raw']}")
+                continue
+
+            print(f"STM32: {line}")
+
+            if response_type == "ERROR":
+                print(
+                    "STM32 returned ERROR"
+                    f" id={parsed.get('id')} message={parsed.get('message', '')}"
+                )
+                return False
+
+            if response_type == "DONE" and parsed.get("test") == test_name:
+                return True
+
+        print(f"Serial timeout: timed out waiting for DONE test={test_name}.")
+        return False
+
     @staticmethod
     def _is_expected_id_response(parsed: dict, response_type: str, command_id: int) -> bool:
         return parsed.get("type") == response_type and parsed.get("id") == command_id
@@ -221,14 +272,25 @@ def parse_args():
     parser.add_argument("--ping", action="store_true", help="Send PING and expect PONG.")
     parser.add_argument("--sort", choices=CLASS_NAMES, help="Send a SORT command for the chosen class.")
     parser.add_argument("--confidence", type=float, default=0.90, help="Confidence value for --sort.")
+    parser.add_argument("--test-diverters", action="store_true", help="Run STM32 TEST_DIVERTERS.")
+    parser.add_argument("--test-trapdoor", action="store_true", help="Run STM32 TEST_TRAPDOOR.")
+    parser.add_argument("--test-ultrasonic", action="store_true", help="Run STM32 TEST_ULTRASONIC.")
+    parser.add_argument("--test-display", action="store_true", help="Run STM32 TEST_DISPLAY.")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
 
-    if not args.ping and args.sort is None:
-        print("No serial action requested. Use --ping or --sort <class>.")
+    requested_tests = [
+        ("TEST_DIVERTERS", args.test_diverters),
+        ("TEST_TRAPDOOR", args.test_trapdoor),
+        ("TEST_ULTRASONIC", args.test_ultrasonic),
+        ("TEST_DISPLAY", args.test_display),
+    ]
+
+    if not args.ping and args.sort is None and not any(enabled for _, enabled in requested_tests):
+        print("No serial action requested. Use --ping, --sort <class>, or a --test-* option.")
         return 0
 
     hardware = SerialHardwareInterface(
@@ -244,6 +306,10 @@ def main() -> int:
 
         if args.sort is not None and not hardware.send_sort_command(args.sort, args.confidence):
             return 1
+
+        for test_name, enabled in requested_tests:
+            if enabled and not hardware.run_test_command(test_name):
+                return 1
 
         return 0
     finally:

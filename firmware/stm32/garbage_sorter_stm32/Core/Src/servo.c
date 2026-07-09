@@ -1,17 +1,17 @@
 #include "servo.h"
 #include "sorter_hardware_config.h"
 
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_SERVOS_ACTIVE
 #include "stm32f4xx_hal.h"
 #endif
 
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_SERVOS_ACTIVE
 static uint32_t clamp_pulse_us(uint32_t pulse_us);
 #endif
 
 ServoStatus Servo_InitAll(void)
 {
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_SERVOS_ACTIVE
   if (HAL_TIM_PWM_Start(&DIVERTER_1_SERVO_TIMER_HANDLE, DIVERTER_1_SERVO_CHANNEL) != HAL_OK)
   {
     return SERVO_STATUS_HAL_ERROR;
@@ -54,7 +54,7 @@ ServoStatus Servo_InitAll(void)
 
 ServoStatus Servo_SetPulseUs(ServoId servo, uint32_t pulse_us)
 {
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_SERVOS_ACTIVE
   uint32_t compare = clamp_pulse_us(pulse_us) * SERVO_PWM_TIMER_TICKS_PER_US;
 
   switch (servo)
@@ -98,7 +98,7 @@ const char *ServoStatus_ToMessage(ServoStatus status)
   }
 }
 
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_SERVOS_ACTIVE
 static uint32_t clamp_pulse_us(uint32_t pulse_us)
 {
   if (pulse_us < SERVO_MIN_PULSE_US)

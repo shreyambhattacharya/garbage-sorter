@@ -2,80 +2,81 @@
 
 This folder contains the STM32CubeIDE firmware project for the Garbage Sorter STM32 side.
 
-The current firmware keeps the existing serial protocol and adds a hardware-control architecture for servos, ultrasonic bin sensors, and an SPI TFT display. The real hardware mappings are centralized in one file so breadboard wiring can change without scattering pin edits through the code.
+The current firmware supports the serial command protocol plus a servo-control milestone for the garbage sorter mechanism. It is not a completed full physical sorter yet: ultrasonic bin sensors and the SPI TFT display are scaffolded but disabled until those peripherals are configured and tested.
 
 ## Hardware
 
 - Board: NUCLEO-F446RE
 - IDE: STM32CubeIDE
 - UART: USART2
-- Baud rate: 115200
-- Windows development serial port: COM6
+- Baud rate: `115200`
+- Windows development serial port: `COM6`
+- Servo PWM timer: `TIM3`
+- Servo PWM channels: `TIM3_CH1`, `TIM3_CH2`, `TIM3_CH3`, `TIM3_CH4`
 
-## Current Milestone
+## Current Firmware State
 
-The STM32 currently supports:
+Implemented and locally verified:
 
-- UART command parsing and validation
+- `PING`, `STATUS`, `RESET`, and `SORT` command parsing
+- `ACK` / `DONE` / `ERROR` protocol responses
 - State tracking
-- `PING`, `STATUS`, `RESET`, and `SORT`
-- Manual hardware bring-up commands
-- A centralized hardware configuration header
-- Hardware abstraction modules for four servos, three ultrasonic sensors, and one SPI TFT display
+- Four-servo PWM bring-up using TIM3
+- `TEST_DIVERTERS`
+- `TEST_TRAPDOOR`
 
-The hardware modules are intentionally disabled by default because the current `.ioc` only has USART2 and basic NUCLEO GPIO configured. The firmware does not claim working motor/servo/sensor/display control until CubeIDE generates the required PWM, GPIO, and SPI peripherals.
+Scaffolded but not yet verified:
 
-## Central Hardware Configuration
+- Ultrasonic bin fullness sensors
+- SPI TFT status display
 
-Edit this file after deciding final wiring:
+## Subsystem Flags
+
+Hardware bring-up is controlled from:
 
 ```text
 Core/Inc/sorter_hardware_config.h
 ```
 
-It contains:
-
-- Servo timer/channel mappings
-- Ultrasonic trigger/echo GPIO mappings
-- TFT SPI/control pin mappings
-- Servo pulse-width calibration values
-- Diverter route table
-- Ultrasonic bin-full threshold
-- Safety delays
-
-Important switches:
-
-```c
-#define SORTER_HARDWARE_ENABLED 0
-#define SORTER_HARDWARE_CONFIG_REQUIRES_CUBEIDE_SETUP 1
-```
-
-Leave `SORTER_HARDWARE_ENABLED` at `0` until CubeIDE has generated the required peripherals. After CubeIDE setup and pin-map edits are complete, set:
+Current intended flags:
 
 ```c
 #define SORTER_HARDWARE_ENABLED 1
+#define SORTER_SERVOS_ENABLED 1
+#define SORTER_ULTRASONIC_ENABLED 0
+#define SORTER_TFT_ENABLED 0
 #define SORTER_HARDWARE_CONFIG_REQUIRES_CUBEIDE_SETUP 0
 ```
 
-If hardware is enabled while the setup guard is still active, the build stops with a clear error.
+This means the STM32 firmware can run servo tests and serial sorts, while ultrasonic and TFT code return clear not-configured responses instead of touching placeholder pins.
 
-## Servo Safety
+## Servo Configuration
 
-Do not power servos from STM32 GPIO pins.
+Current PWM mapping:
 
-Use an external 5-6 V servo supply and connect the external supply ground to STM32 ground. Keep the first tests unloaded or disconnected from the mechanism.
-
-Servo pulse values are configured in microseconds:
-
-```c
-#define SERVO_MIN_PULSE_US 1000U
-#define SERVO_CENTER_PULSE_US 1500U
-#define SERVO_MAX_PULSE_US 2000U
+```text
+Diverter 1 servo       -> TIM3_CH1
+Diverter 2 servo       -> TIM3_CH2
+Trapdoor left servo    -> TIM3_CH3
+Trapdoor right servo   -> TIM3_CH4
 ```
 
-Start with conservative values, then adjust these route/calibration macros:
+TIM3 is configured for a servo-style PWM period:
+
+```text
+Prescaler: 83
+Period: 19999
+Initial pulse: 1500
+```
+
+With the current 84 MHz timer clock, this gives a 1 us timer tick and a 20 ms servo period.
+
+Servo calibration values are editable in `sorter_hardware_config.h`:
 
 ```c
+SERVO_MIN_PULSE_US
+SERVO_CENTER_PULSE_US
+SERVO_MAX_PULSE_US
 DIVERTER_1_LEFT_US
 DIVERTER_1_RIGHT_US
 DIVERTER_2_LEFT_US
@@ -86,59 +87,15 @@ TRAPDOOR_RIGHT_CLOSED_US
 TRAPDOOR_RIGHT_OPEN_US
 ```
 
-The timer PWM setup should use a 50 Hz servo period and a 1 us timer tick so a compare value of `1500` means a 1500 us pulse.
+Start conservatively. Do not attach servos to the physical mechanism until direction, pulse ranges, and travel limits are safe.
 
-## Routing
+## Safety
 
-The two-binary-diverter route table is centralized in `sorter_hardware_config.h`.
-
-Default logical routing:
-
-```text
-landfill  -> diverter 1 LEFT,  diverter 2 LEFT
-recycling -> diverter 1 RIGHT, diverter 2 LEFT
-compost   -> diverter 1 RIGHT, diverter 2 RIGHT
-```
-
-If a servo direction is reversed mechanically, edit the route macros in the config header instead of changing `sorter_hardware.c`.
-
-## Ultrasonic Bin Warnings
-
-Each ultrasonic sensor points downward into a bin. If the measured distance to the trash surface is below:
-
-```c
-#define BIN_ALMOST_FULL_DISTANCE_CM 8.0f
-```
-
-that bin is considered almost full. This milestone only displays warnings. It does not block sorting based on fullness yet.
-
-Every ultrasonic read uses a timeout:
-
-```c
-#define ULTRASONIC_TIMEOUT_US 30000U
-```
-
-so missing echo signals cannot block forever.
-
-## TFT Display
-
-The TFT abstraction is isolated in:
-
-```text
-Core/Inc/tft_display.h
-Core/Src/tft_display.c
-```
-
-The placeholder assumes an ILI9341-style SPI TFT may be used, but the exact controller still needs to be confirmed. Until the controller-specific driver is completed, display functions return a clear not-configured/incomplete status instead of pretending to draw text.
-
-Planned display screens:
-
-- Garbage Sorter Ready
-- Ready
-- Sorting: landfill/compost/recycling
-- Done: landfill/compost/recycling
-- Error: `<message>`
-- Bin-full warnings, including multiple warnings at once
+- Do not power servos from STM32 GPIO.
+- Use an external 5-6 V servo supply.
+- Connect the external servo supply ground to STM32 ground.
+- Run `TEST_DIVERTERS` and `TEST_TRAPDOOR` no-load before attaching linkages.
+- Keep pulse widths configurable and conservative.
 
 ## Supported Commands
 
@@ -161,48 +118,55 @@ compost
 recycling
 ```
 
-Expected protocol responses:
+Expected examples:
 
 ```text
+PING
 PONG
+
+STATUS
 STATUS state=IDLE
-ACK id=<id>
-DONE id=<id>
-ERROR id=<id> message=<reason>
-```
 
-When hardware is not configured yet, a valid `SORT` returns `ACK` followed by an `ERROR` such as:
+TEST_DIVERTERS
+STATUS test=TEST_DIVERTERS result=START
+DONE test=TEST_DIVERTERS
 
-```text
+TEST_TRAPDOOR
+STATUS test=TEST_TRAPDOOR result=START
+DONE test=TEST_TRAPDOOR
+
+TEST_ULTRASONIC
+STATUS test=TEST_ULTRASONIC result=START
+ERROR id=0 message=hardware_not_configured
+
+TEST_DISPLAY
+STATUS test=TEST_DISPLAY result=START
+ERROR id=0 message=hardware_not_configured
+
+SORT class=recycling confidence=0.9000 id=1
 ACK id=1
-ERROR id=1 message=hardware_not_configured
+DONE id=1
 ```
 
-That is intentional. It prevents silent fake success before CubeIDE peripherals and real wiring are ready.
+`TEST_ULTRASONIC` and `TEST_DISPLAY` should fail cleanly until those subsystems are enabled and tested.
 
-## PuTTY Tests
+## PuTTY Bring-Up
 
 Open `COM6` at `115200` baud.
 
-Basic protocol:
+Recommended sequence:
 
 ```text
 PING
 STATUS
-RESET
-SORT class=recycling confidence=0.9000 id=1
-```
-
-Manual hardware bring-up:
-
-```text
 TEST_DIVERTERS
 TEST_TRAPDOOR
+SORT class=recycling confidence=0.9000 id=1
 TEST_ULTRASONIC
 TEST_DISPLAY
 ```
 
-`TEST_ULTRASONIC` reports machine-readable distances as `cm_x100`, for example `cm_x100=1234` means `12.34 cm`.
+Run the servo commands no-load first. Physical sorting reliability depends on mechanism geometry, object placement, and calibration.
 
 ## Python Diagnostics
 
@@ -210,10 +174,22 @@ From the repo root, with the Python environment activated:
 
 ```powershell
 python src/hardware_diagnostics.py --check-serial-ping --port COM6
+python src/hardware_diagnostics.py --test-diverters --port COM6
+python src/hardware_diagnostics.py --test-trapdoor --port COM6
 python src/hardware_diagnostics.py --check-serial-sort recycling --port COM6
+python src/hardware_diagnostics.py --test-ultrasonic --port COM6
+python src/hardware_diagnostics.py --test-display --port COM6
 ```
 
-Run serial sort diagnostics only with motors disconnected or while the firmware is still in a safe dry-run/not-configured state.
+## Future Pin Map Work
+
+Keep future ultrasonic/TFT setup notes here:
+
+```text
+firmware/stm32/HARDWARE_PINMAP_REQUIRED.md
+```
+
+That file lists the remaining CubeIDE GPIO/SPI setup and placeholder mappings.
 
 ## Firmware Structure
 

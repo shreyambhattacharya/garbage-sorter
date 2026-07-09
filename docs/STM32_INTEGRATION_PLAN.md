@@ -1,34 +1,43 @@
 # STM32 Integration Plan
 
-The STM32 receives serial commands from the Raspberry Pi, controls the sorting mechanism, reads sensors, and reports success or failure back to the Pi.
+The STM32 receives serial commands from the Raspberry Pi/Python side, validates them, controls low-level hardware, and reports success or failure back to the Pi.
 
-This document is a plan, not full firmware.
+This document is the integration plan. The current implemented milestone includes UART protocol handling and four-servo PWM control. Ultrasonic sensors and the TFT display remain planned/in-progress until configured and tested.
 
-## Responsibilities
+## Current Responsibilities
 
-The STM32 should:
+The STM32 currently:
 
-- Receive serial commands from the Pi.
-- Parse `PING`, `SORT`, `STATUS`, and `RESET`.
-- Send `ACK id=<id>` quickly after accepting a `SORT` command.
-- Control the chute motor.
-- Control the trapdoor actuator.
-- Read ultrasonic sensors.
-- Enforce motion timeouts.
-- Send `DONE id=<id>` on success.
-- Send `ERROR id=<id> message=<message>` on failure.
+- Receives serial commands over USART2 at `115200` baud.
+- Parses `PING`, `STATUS`, `RESET`, and `SORT`.
+- Parses manual bring-up commands: `TEST_DIVERTERS`, `TEST_TRAPDOOR`, `TEST_ULTRASONIC`, `TEST_DISPLAY`.
+- Sends `ACK id=<id>` quickly after accepting a valid `SORT` command.
+- Controls two diverter servos and two trapdoor servos through TIM3 PWM.
+- Sends `DONE id=<id>` after the servo sequence succeeds.
+- Sends `ERROR id=<id> message=<message>` on validation or hardware failure.
 
-## Suggested State Machine
+Planned later:
+
+- Read ultrasonic bin fullness sensors.
+- Display state and warnings on the SPI TFT.
+- Add richer motion fault detection around the mechanical system.
+
+## Current State Machine
 
 ```text
 IDLE
 COMMAND_RECEIVED
-ROTATING_CHUTE
+SORTING
+ERROR
+```
+
+Future states may split sorting into more detailed motion states:
+
+```text
+ROUTING_DIVERTERS
 OPENING_TRAPDOOR
 CLOSING_TRAPDOOR
-RETURNING_HOME
 DONE
-ERROR
 ```
 
 ## Command Handling
@@ -43,20 +52,33 @@ ERROR
 
 `RESET`:
 
-- Stop motion.
-- Return outputs to a safe state.
-- Attempt to return to `IDLE`.
+- Return firmware state to `IDLE`.
 
 `SORT class=<class> confidence=<confidence> id=<id>`:
 
-- Validate class.
-- Store command ID.
+- Validate class, confidence, and command ID.
 - Send `ACK id=<id>`.
-- Rotate chute to the requested bin.
-- Open trapdoor.
-- Close trapdoor.
-- Return mechanism home if needed.
-- Send `DONE id=<id>`.
+- Move diverter servos to the route configured in `sorter_hardware_config.h`.
+- Wait for diverters to settle.
+- Open both trapdoor servos.
+- Hold open.
+- Close both trapdoor servos.
+- Send `DONE id=<id>` on success.
+- Send `ERROR id=<id> message=<reason>` on failure.
+
+`TEST_DIVERTERS`:
+
+- Moves diverter servos through landfill, recycling, and compost routes.
+- Returns `DONE test=TEST_DIVERTERS` on success.
+
+`TEST_TRAPDOOR`:
+
+- Opens and closes both trapdoor servos.
+- Returns `DONE test=TEST_TRAPDOOR` on success.
+
+`TEST_ULTRASONIC` and `TEST_DISPLAY`:
+
+- Currently return a clear not-configured error until those subsystems are enabled and verified.
 
 ## Pseudocode
 
@@ -64,80 +86,68 @@ ERROR
 state = IDLE
 
 loop:
-    if serial_line_available:
-        command = read_line()
+    command = read_serial_line()
 
-        if command == "PING":
-            print("PONG")
+    if command == "PING":
+        print("PONG")
 
-        else if command == "STATUS":
-            print("STATUS state=<current_state>")
+    else if command == "STATUS":
+        print("STATUS state=<current_state>")
 
-        else if command == "RESET":
-            stop_all_motion()
-            return_outputs_to_safe_state()
-            state = IDLE
+    else if command == "RESET":
+        state = IDLE
+        print("STATUS state=IDLE")
 
-        else if command starts with "SORT":
-            parsed = parse_sort_command(command)
+    else if command starts with "SORT":
+        parsed = parse_sort_command(command)
 
-            if parsed is invalid:
-                print("ERROR id=0 message=invalid_command")
-                continue
+        if parsed is invalid:
+            print("ERROR id=<id_or_0> message=<reason>")
+            continue
 
-            command_id = parsed.id
-            target_class = parsed.class
-            print("ACK id=<command_id>")
+        print("ACK id=<command_id>")
+        state = SORTING
 
-            state = COMMAND_RECEIVED
+        if not execute_servo_sort(parsed.class):
+            state = ERROR
+            print("ERROR id=<command_id> message=servo_error")
+            continue
 
-            if not rotate_chute_to_bin(target_class, timeout_ms):
-                state = ERROR
-                print("ERROR id=<command_id> message=chute_timeout")
-                continue
+        state = IDLE
+        print("DONE id=<command_id>")
 
-            state = OPENING_TRAPDOOR
-            if not open_trapdoor(timeout_ms):
-                state = ERROR
-                print("ERROR id=<command_id> message=trapdoor_open_timeout")
-                continue
+    else if command == "TEST_DIVERTERS":
+        print("STATUS test=TEST_DIVERTERS result=START")
+        run_diverter_test()
+        print("DONE test=TEST_DIVERTERS")
 
-            state = CLOSING_TRAPDOOR
-            if not close_trapdoor(timeout_ms):
-                state = ERROR
-                print("ERROR id=<command_id> message=trapdoor_close_timeout")
-                continue
+    else if command == "TEST_TRAPDOOR":
+        print("STATUS test=TEST_TRAPDOOR result=START")
+        run_trapdoor_test()
+        print("DONE test=TEST_TRAPDOOR")
 
-            state = RETURNING_HOME
-            if not return_home_if_needed(timeout_ms):
-                state = ERROR
-                print("ERROR id=<command_id> message=home_timeout")
-                continue
-
-            state = DONE
-            print("DONE id=<command_id>")
-            state = IDLE
-
-        else:
-            print("ERROR id=0 message=unknown_command")
+    else:
+        print("ERROR id=0 message=unknown_command")
 ```
 
 ## Failure Handling
 
 The STM32 should fail safe:
 
-- Stop motion on timeout.
-- Stop motion on sensor disagreement.
-- Stop motion on malformed commands.
-- Avoid repeated actuator motion after an error until reset or a known-safe state is reached.
-- Report errors with a short machine-readable message.
+- Stop or avoid further motion after a hardware error.
+- Reject malformed commands.
+- Clamp servo pulse widths.
+- Avoid enabling unconfigured ultrasonic/TFT subsystems.
+- Report errors with short machine-readable messages.
 
-## Hardware Bringup Order
+## Remaining Bring-Up
 
-1. Serial parser only.
-2. Chute motor disconnected from mechanism.
-3. Trapdoor actuator disconnected from mechanism.
-4. Ultrasonic sensors alone.
-5. Mechanism attached with no items.
-6. One item at a time.
-7. Full integrated test.
+1. Serial ping.
+2. Servo PWM no-load test.
+3. `TEST_DIVERTERS` no-load.
+4. `TEST_TRAPDOOR` no-load.
+5. Mechanical calibration.
+6. `SORT` command with servos.
+7. Ultrasonic setup.
+8. TFT setup.
+9. Full closed-loop physical demo.

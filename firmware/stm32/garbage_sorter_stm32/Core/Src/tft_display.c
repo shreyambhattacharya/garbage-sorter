@@ -1,7 +1,7 @@
 #include "tft_display.h"
 #include "sorter_hardware_config.h"
 
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_TFT_ACTIVE
 #include "stm32f4xx_hal.h"
 #endif
 
@@ -15,7 +15,7 @@
 
 TftStatus TftDisplay_Init(void)
 {
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_TFT_ACTIVE
   HAL_GPIO_WritePin(TFT_CS_PORT, TFT_CS_PIN, GPIO_PIN_SET);
   HAL_GPIO_WritePin(TFT_RST_PORT, TFT_RST_PIN, GPIO_PIN_RESET);
   HAL_Delay(20);
@@ -32,7 +32,7 @@ TftStatus TftDisplay_Init(void)
 
 TftStatus TftDisplay_ShowStartup(void)
 {
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_TFT_ACTIVE
   return TFT_STATUS_DRIVER_INCOMPLETE;
 #else
   return TFT_STATUS_NOT_CONFIGURED;
@@ -41,7 +41,7 @@ TftStatus TftDisplay_ShowStartup(void)
 
 TftStatus TftDisplay_ShowReady(void)
 {
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_TFT_ACTIVE
   return TFT_STATUS_DRIVER_INCOMPLETE;
 #else
   return TFT_STATUS_NOT_CONFIGURED;
@@ -51,7 +51,7 @@ TftStatus TftDisplay_ShowReady(void)
 TftStatus TftDisplay_ShowSorting(SorterClass class_name)
 {
   (void)class_name;
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_TFT_ACTIVE
   return TFT_STATUS_DRIVER_INCOMPLETE;
 #else
   return TFT_STATUS_NOT_CONFIGURED;
@@ -61,7 +61,7 @@ TftStatus TftDisplay_ShowSorting(SorterClass class_name)
 TftStatus TftDisplay_ShowDone(SorterClass class_name)
 {
   (void)class_name;
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_TFT_ACTIVE
   return TFT_STATUS_DRIVER_INCOMPLETE;
 #else
   return TFT_STATUS_NOT_CONFIGURED;
@@ -71,7 +71,7 @@ TftStatus TftDisplay_ShowDone(SorterClass class_name)
 TftStatus TftDisplay_ShowError(const char *message)
 {
   (void)message;
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_TFT_ACTIVE
   return TFT_STATUS_DRIVER_INCOMPLETE;
 #else
   return TFT_STATUS_NOT_CONFIGURED;
@@ -81,7 +81,7 @@ TftStatus TftDisplay_ShowError(const char *message)
 TftStatus TftDisplay_ShowBinWarnings(const TftBinWarnings *warnings)
 {
   (void)warnings;
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_TFT_ACTIVE
   return TFT_STATUS_DRIVER_INCOMPLETE;
 #else
   return TFT_STATUS_NOT_CONFIGURED;

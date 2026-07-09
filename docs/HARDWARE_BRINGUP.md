@@ -1,18 +1,33 @@
 # Hardware Bringup
 
-This project should move from laptop-only simulation to Raspberry Pi + STM32 hardware in small, testable phases. Test each component by itself before connecting the full system.
+This project is being brought up in small, testable hardware milestones. The current verified hardware milestone is Python-to-STM32 serial communication plus four-servo PWM bring-up. Ultrasonic bin sensors and the SPI TFT display are still future bring-up work.
 
-## Recommended Diagnostics Order
+## Bring-Up Sequence
 
-Use `src/hardware_diagnostics.py` before connecting real actuators:
+1. Serial ping
+2. Servo PWM no-load test
+3. `TEST_DIVERTERS` no-load
+4. `TEST_TRAPDOOR` no-load
+5. Mechanical calibration
+6. `SORT` command with servos
+7. Ultrasonic setup
+8. TFT setup
+9. Full closed-loop physical demo
 
-1. Run `python src/hardware_diagnostics.py --check-model`.
-2. Run `python src/hardware_diagnostics.py --image data/test/recycling/example.jpg` with a known test image.
-3. Run `python src/hardware_diagnostics.py --check-camera --camera opencv` or `python src/hardware_diagnostics.py --check-camera --camera picamera2`.
-4. Run `python src/hardware_diagnostics.py --check-sim`.
-5. Run `python src/hardware_diagnostics.py --check-serial-ping --port COM3` or `python src/hardware_diagnostics.py --check-serial-ping --port /dev/ttyACM0` with the STM32 connected.
-6. Run `python src/hardware_diagnostics.py --check-serial-sort recycling --port COM3` only with motors disconnected or STM32 dry-run firmware.
-7. Only then test actuators separately.
+## Recommended Diagnostics
+
+Use `src/hardware_diagnostics.py` before attaching the servos to the mechanism:
+
+```powershell
+python src/hardware_diagnostics.py --check-model
+python src/hardware_diagnostics.py --check-sim
+python src/hardware_diagnostics.py --check-serial-ping --port COM6
+python src/hardware_diagnostics.py --test-diverters --port COM6
+python src/hardware_diagnostics.py --test-trapdoor --port COM6
+python src/hardware_diagnostics.py --check-serial-sort recycling --port COM6
+```
+
+Use `/dev/ttyACM0` or your actual serial device on Linux/Raspberry Pi.
 
 ## Phase 1: Raspberry Pi Setup
 
@@ -44,48 +59,59 @@ python src/run_sorter.py --hardware sim --image data/test/recycling/example.jpg
 
 ## Phase 4: STM32 Serial Test
 
-- Test serial communication before motors, actuators, or sensors are connected.
+- Test serial communication before connecting servo power.
 - Start with `PING` and expect `PONG`.
-- Then test `STATUS`.
-- Then test `SORT` with the actuator outputs disconnected or disabled.
-- Confirm the STM32 sends `ACK` quickly and `DONE` only when the simulated or real motion sequence is complete.
+- Run `STATUS` and confirm the state is readable.
+- Run `RESET` and confirm the state returns to `IDLE`.
 
-## Phase 5: Actuator Test
+## Phase 5: Servo Bring-Up
 
-- Do not power motors from Raspberry Pi GPIO.
-- Use an external motor or actuator power supply sized for the load.
-- Verify common ground between control electronics and motor driver when the circuit requires it.
-- Test motors disconnected from the chute or trapdoor mechanism first.
-- Confirm direction, limit behavior, current draw, and emergency stop behavior before attaching the mechanism.
+- Do not power servos from Raspberry Pi or STM32 GPIO.
+- Use an external 5-6 V servo supply.
+- Connect external servo ground to STM32 ground.
+- Test PWM with servos disconnected from the mechanism first.
+- Run `TEST_DIVERTERS` no-load.
+- Run `TEST_TRAPDOOR` no-load.
+- Adjust pulse widths in `sorter_hardware_config.h`.
 
-## Phase 6: Sensor Test
+## Phase 6: Servo Sort Command
 
-- Test ultrasonic sensors independently.
-- Verify sensor readings are stable with no item, one item, and a blocked path.
-- Confirm the STM32 handles sensor timeouts or invalid readings safely.
-- Do not let a missing sensor reading keep a motor running indefinitely.
+- Run `SORT class=recycling confidence=0.9000 id=1` only after no-load servo tests pass.
+- Confirm `ACK id=1` arrives before motion completes.
+- Confirm `DONE id=1` arrives only after the diverter/trapdoor sequence completes.
+- Repeat with landfill, recycling, and compost routes.
 
-## Phase 7: Integrated Dry Run
+## Phase 7: Sensor Test
 
-- Run `--hardware sim` with the trained model first.
-- Then run serial mode with motors disabled.
-- Confirm commands, acknowledgements, state transitions, logs, and failure messages.
-- Confirm uncertain predictions do not move hardware.
+Ultrasonic sensors are scaffolded but not yet verified.
 
-## Phase 8: Full System Test
+- Configure trigger/echo pins in CubeIDE.
+- Confirm voltage compatibility for echo pins before wiring.
+- Enable `SORTER_ULTRASONIC_ENABLED` only after GPIO setup is correct.
+- Verify timeouts with disconnected and blocked sensors.
 
-- Use one item at a time during first full tests.
-- Keep the mechanism accessible and easy to power down.
-- Verify the chute starts in a known home position.
-- Verify trapdoor open and close timing.
-- Watch for jams, false triggers, unstable sensor readings, and repeated commands.
-- Increase test complexity only after individual components are reliable.
+## Phase 8: TFT Test
+
+The TFT display abstraction is scaffolded but not yet verified.
+
+- Confirm the TFT controller before writing the final driver.
+- Configure SPI and control pins in CubeIDE.
+- Enable `SORTER_TFT_ENABLED` only after SPI/control pin setup is correct.
+
+## Software Checklist
+
+- `python -m pytest` passes.
+- `python src/hardware_diagnostics.py --check-serial-ping --port COM6` passes.
+- `python src/hardware_diagnostics.py --test-diverters --port COM6` passes.
+- `python src/hardware_diagnostics.py --test-trapdoor --port COM6` passes.
+- README current status is accurate.
+- No generated build artifacts are committed.
 
 ## Safety Notes
 
-- Do not power motors from Raspberry Pi GPIO.
-- Verify external motor power before attaching actuators.
-- Verify common ground where required by the motor driver and serial wiring.
-- Test motors disconnected from the mechanism first.
-- Run simulation mode before serial mode.
-- Use one item at a time during first full system tests.
+- Do not power servos from Raspberry Pi or STM32 GPIO.
+- Verify external servo power before attaching linkages.
+- Verify common ground between external servo supply and STM32.
+- Test servos disconnected from the mechanism first.
+- Start with conservative pulse widths.
+- Use one item at a time during first full physical tests.

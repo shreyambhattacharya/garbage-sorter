@@ -1,14 +1,14 @@
 #include "ultrasonic.h"
 #include "sorter_hardware_config.h"
 
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_ULTRASONIC_ACTIVE
 #include "stm32f4xx_hal.h"
 #endif
 
 typedef struct
 {
   SorterClass bin_class;
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_ULTRASONIC_ACTIVE
   GPIO_TypeDef *trigger_port;
   uint16_t trigger_pin;
   GPIO_TypeDef *echo_port;
@@ -17,7 +17,7 @@ typedef struct
 } UltrasonicSensorConfig;
 
 static UltrasonicReading make_reading(SorterClass bin_class, float distance_cm, uint8_t valid, UltrasonicStatus status);
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_ULTRASONIC_ACTIVE
 static const UltrasonicSensorConfig *get_sensor_config(SorterClass bin_class);
 static void delay_us(uint32_t delay);
 static uint32_t now_us(void);
@@ -26,7 +26,7 @@ static uint8_t wait_for_echo(GPIO_TypeDef *port, uint16_t pin, GPIO_PinState sta
 
 UltrasonicStatus Ultrasonic_Init(void)
 {
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_ULTRASONIC_ACTIVE
   CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
   DWT->CYCCNT = 0;
   DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
@@ -38,7 +38,7 @@ UltrasonicStatus Ultrasonic_Init(void)
 
 UltrasonicReading Ultrasonic_ReadBin(SorterClass bin_class)
 {
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_ULTRASONIC_ACTIVE
   const UltrasonicSensorConfig *sensor = get_sensor_config(bin_class);
   uint32_t echo_start_us = 0;
   uint32_t echo_end_us = 0;
@@ -112,7 +112,7 @@ static UltrasonicReading make_reading(SorterClass bin_class, float distance_cm, 
   return reading;
 }
 
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_ULTRASONIC_ACTIVE
 static const UltrasonicSensorConfig sensors[] = {
     {SORTER_CLASS_LANDFILL, LANDFILL_US_TRIG_PORT, LANDFILL_US_TRIG_PIN, LANDFILL_US_ECHO_PORT, LANDFILL_US_ECHO_PIN},
     {SORTER_CLASS_COMPOST, COMPOST_US_TRIG_PORT, COMPOST_US_TRIG_PIN, COMPOST_US_ECHO_PORT, COMPOST_US_ECHO_PIN},

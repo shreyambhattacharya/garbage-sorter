@@ -32,7 +32,11 @@ def parse_args():
     parser.add_argument("--camera-index", type=int, default=CAMERA_INDEX)
     parser.add_argument("--check-sim", action="store_true", help="Run simulator ping/status/sort diagnostics.")
     parser.add_argument("--check-serial-ping", action="store_true", help="Send PING to STM32 and expect PONG.")
-    parser.add_argument("--check-serial-sort", choices=CLASS_NAMES, help="Send a dry SORT command to STM32.")
+    parser.add_argument("--check-serial-sort", choices=CLASS_NAMES, help="Send a SORT command to STM32.")
+    parser.add_argument("--test-diverters", action="store_true", help="Run STM32 TEST_DIVERTERS servo bring-up.")
+    parser.add_argument("--test-trapdoor", action="store_true", help="Run STM32 TEST_TRAPDOOR servo bring-up.")
+    parser.add_argument("--test-ultrasonic", action="store_true", help="Run STM32 TEST_ULTRASONIC.")
+    parser.add_argument("--test-display", action="store_true", help="Run STM32 TEST_DISPLAY.")
     parser.add_argument("--port", default=SERIAL_PORT, help=f"Serial port, default {SERIAL_PORT}.")
     parser.add_argument("--full-sim", action="store_true", help="Run image inference plus simulated hardware sort.")
     return parser
@@ -148,13 +152,31 @@ def check_serial_ping(port: str) -> bool:
 
 
 def check_serial_sort(class_name: str, port: str) -> bool:
-    name = "serial dry sort check"
-    print("WARNING: This sends a SORT command. Disconnect motors or use STM32 dry-run firmware first.")
+    name = "serial sort check"
+    print("WARNING: This sends a SORT command and may move connected servos.")
+    print("Verify servo pulse ranges and mechanism clearance before running this test.")
     hardware = make_serial_hardware(port)
 
     try:
         if not hardware.send_sort_command(class_name, 0.90):
             return print_fail(name, f"SORT failed on {port}")
+    finally:
+        hardware.disconnect()
+
+    return print_pass(name)
+
+
+def check_serial_test(test_name: str, port: str) -> bool:
+    name = f"{test_name.lower()} check"
+    if test_name in {"TEST_DIVERTERS", "TEST_TRAPDOOR"}:
+        print(f"WARNING: {test_name} may move connected servos.")
+        print("Run no-load first and verify pulse ranges before attaching the mechanism.")
+
+    hardware = make_serial_hardware(port)
+
+    try:
+        if not hardware.run_test_command(test_name):
+            return print_fail(name, f"{test_name} failed on {port}")
     finally:
         hardware.disconnect()
 
@@ -249,6 +271,10 @@ def main() -> int:
         args.check_sim,
         args.check_serial_ping,
         bool(args.check_serial_sort),
+        args.test_diverters,
+        args.test_trapdoor,
+        args.test_ultrasonic,
+        args.test_display,
         args.full_sim,
     ]
 
@@ -270,6 +296,14 @@ def main() -> int:
         results.append(check_serial_ping(args.port))
     if args.check_serial_sort:
         results.append(check_serial_sort(args.check_serial_sort, args.port))
+    if args.test_diverters:
+        results.append(check_serial_test("TEST_DIVERTERS", args.port))
+    if args.test_trapdoor:
+        results.append(check_serial_test("TEST_TRAPDOOR", args.port))
+    if args.test_ultrasonic:
+        results.append(check_serial_test("TEST_ULTRASONIC", args.port))
+    if args.test_display:
+        results.append(check_serial_test("TEST_DISPLAY", args.port))
     if args.full_sim:
         results.append(check_full_sim(args.image))
 

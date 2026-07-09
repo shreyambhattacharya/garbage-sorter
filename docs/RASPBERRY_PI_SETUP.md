@@ -67,6 +67,9 @@ After the STM32 serial firmware is ready and tested independently:
 
 ```bash
 python src/serial_hardware.py --port /dev/ttyACM0 --ping
+python src/hardware_diagnostics.py --check-serial-ping --port /dev/ttyACM0
+python src/hardware_diagnostics.py --test-diverters --port /dev/ttyACM0
+python src/hardware_diagnostics.py --test-trapdoor --port /dev/ttyACM0
 ```
 
 Then try the sorter with serial hardware:

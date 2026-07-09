@@ -15,6 +15,10 @@ PING
 SORT class=<class> confidence=<confidence> id=<id>
 STATUS
 RESET
+TEST_DIVERTERS
+TEST_TRAPDOOR
+TEST_ULTRASONIC
+TEST_DISPLAY
 ```
 
 Valid classes:
@@ -33,6 +37,9 @@ ACK id=<id>
 DONE id=<id>
 ERROR id=<id> message=<message>
 STATUS state=<state>
+STATUS test=<test_name> result=<result>
+DONE test=<test_name>
+DISTANCE class=<class> valid=<0_or_1> cm_x100=<distance_times_100>
 ```
 
 ## Command IDs
@@ -59,6 +66,36 @@ The Pi expects:
 If the Pi receives malformed lines, it should report them and continue waiting until the expected response or timeout.
 
 If the STM32 cannot parse a command, it should send an `ERROR` response when possible.
+
+## Manual Bring-Up Commands
+
+The test commands are for component bring-up and should not interfere with the Python `SORT` protocol.
+
+Current servo commands:
+
+```text
+Pi:    TEST_DIVERTERS
+STM32: STATUS test=TEST_DIVERTERS result=START
+STM32: DONE test=TEST_DIVERTERS
+
+Pi:    TEST_TRAPDOOR
+STM32: STATUS test=TEST_TRAPDOOR result=START
+STM32: DONE test=TEST_TRAPDOOR
+```
+
+Scaffolded subsystem commands:
+
+```text
+Pi:    TEST_ULTRASONIC
+STM32: STATUS test=TEST_ULTRASONIC result=START
+STM32: ERROR id=0 message=hardware_not_configured
+
+Pi:    TEST_DISPLAY
+STM32: STATUS test=TEST_DISPLAY result=START
+STM32: ERROR id=0 message=hardware_not_configured
+```
+
+When ultrasonic sensors are enabled later, readings use `cm_x100`; for example `cm_x100=1234` means `12.34 cm`.
 
 ## Example: Ping
 

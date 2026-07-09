@@ -7,11 +7,13 @@
 #include "stm32f4xx_hal.h"
 #endif
 
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_SERVOS_ACTIVE
 static SorterHardwareStatus set_route(SorterClass class_name);
 static SorterHardwareStatus open_trapdoor(void);
 static SorterHardwareStatus close_trapdoor(void);
 static SorterHardwareStatus servo_to_hardware_status(ServoStatus status);
+#endif
+#if SORTER_ULTRASONIC_ACTIVE
 static SorterHardwareStatus ultrasonic_to_hardware_status(UltrasonicStatus status);
 #endif
 static SorterHardwareStatus tft_to_hardware_status(TftStatus status);
@@ -22,18 +24,23 @@ SorterHardwareStatus SorterHardware_Init(void)
 #if SORTER_HARDWARE_ENABLED
   SorterHardwareStatus status;
 
+#if SORTER_SERVOS_ACTIVE
   status = servo_to_hardware_status(Servo_InitAll());
   if (status != SORTER_HW_STATUS_OK)
   {
     return status;
   }
+#endif
 
+#if SORTER_ULTRASONIC_ACTIVE
   status = ultrasonic_to_hardware_status(Ultrasonic_Init());
   if (status != SORTER_HW_STATUS_OK)
   {
     return status;
   }
+#endif
 
+#if SORTER_TFT_ACTIVE
   status = tft_to_hardware_status(TftDisplay_Init());
   if (status != SORTER_HW_STATUS_OK)
   {
@@ -45,6 +52,7 @@ SorterHardwareStatus SorterHardware_Init(void)
   {
     return status;
   }
+#endif
 
   return SORTER_HW_STATUS_OK;
 #else
@@ -54,7 +62,7 @@ SorterHardwareStatus SorterHardware_Init(void)
 
 SorterHardwareStatus SorterHardware_ExecuteSort(SorterClass class_name)
 {
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_SERVOS_ACTIVE
   SorterHardwareStatus status;
 
   if (class_name == SORTER_CLASS_UNKNOWN)
@@ -62,12 +70,16 @@ SorterHardwareStatus SorterHardware_ExecuteSort(SorterClass class_name)
     return SORTER_HW_STATUS_INVALID_CLASS;
   }
 
+#if SORTER_TFT_ACTIVE
   (void)TftDisplay_ShowSorting(class_name);
+#endif
 
   status = set_route(class_name);
   if (status != SORTER_HW_STATUS_OK)
   {
+#if SORTER_TFT_ACTIVE
     (void)TftDisplay_ShowError(SorterHardwareStatus_ToMessage(status));
+#endif
     return status;
   }
 
@@ -76,7 +88,9 @@ SorterHardwareStatus SorterHardware_ExecuteSort(SorterClass class_name)
   status = open_trapdoor();
   if (status != SORTER_HW_STATUS_OK)
   {
+#if SORTER_TFT_ACTIVE
     (void)TftDisplay_ShowError(SorterHardwareStatus_ToMessage(status));
+#endif
     return status;
   }
 
@@ -85,13 +99,19 @@ SorterHardwareStatus SorterHardware_ExecuteSort(SorterClass class_name)
   status = close_trapdoor();
   if (status != SORTER_HW_STATUS_OK)
   {
+#if SORTER_TFT_ACTIVE
     (void)TftDisplay_ShowError(SorterHardwareStatus_ToMessage(status));
+#endif
     return status;
   }
 
   HAL_Delay(TRAPDOOR_CLOSE_SETTLE_MS);
+#if SORTER_ULTRASONIC_ACTIVE && SORTER_TFT_ACTIVE
   (void)SorterHardware_UpdateBinWarnings();
+#endif
+#if SORTER_TFT_ACTIVE
   (void)TftDisplay_ShowDone(class_name);
+#endif
 
   return SORTER_HW_STATUS_OK;
 #else
@@ -102,7 +122,7 @@ SorterHardwareStatus SorterHardware_ExecuteSort(SorterClass class_name)
 
 SorterHardwareStatus SorterHardware_TestDiverters(void)
 {
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_SERVOS_ACTIVE
   SorterHardwareStatus status;
 
   status = set_route(SORTER_CLASS_LANDFILL);
@@ -134,7 +154,7 @@ SorterHardwareStatus SorterHardware_TestDiverters(void)
 
 SorterHardwareStatus SorterHardware_TestTrapdoor(void)
 {
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_SERVOS_ACTIVE
   SorterHardwareStatus status;
 
   status = open_trapdoor();
@@ -165,6 +185,12 @@ SorterHardwareStatus SorterHardware_TestUltrasonic(SorterBinReadings *readings)
     return SORTER_HW_STATUS_ULTRASONIC_ERROR;
   }
 
+#if !SORTER_ULTRASONIC_ACTIVE
+  readings->landfill = Ultrasonic_ReadBin(SORTER_CLASS_LANDFILL);
+  readings->compost = Ultrasonic_ReadBin(SORTER_CLASS_COMPOST);
+  readings->recycling = Ultrasonic_ReadBin(SORTER_CLASS_RECYCLING);
+  return SORTER_HW_STATUS_NOT_CONFIGURED;
+#else
   readings->landfill = Ultrasonic_ReadBin(SORTER_CLASS_LANDFILL);
   readings->compost = Ultrasonic_ReadBin(SORTER_CLASS_COMPOST);
   readings->recycling = Ultrasonic_ReadBin(SORTER_CLASS_RECYCLING);
@@ -182,10 +208,14 @@ SorterHardwareStatus SorterHardware_TestUltrasonic(SorterBinReadings *readings)
   }
 
   return SORTER_HW_STATUS_OK;
+#endif
 }
 
 SorterHardwareStatus SorterHardware_TestDisplay(void)
 {
+#if !SORTER_TFT_ACTIVE
+  return SORTER_HW_STATUS_NOT_CONFIGURED;
+#else
   TftBinWarnings warnings;
   SorterHardwareStatus status;
 
@@ -223,6 +253,7 @@ SorterHardwareStatus SorterHardware_TestDisplay(void)
   warnings.compost_almost_full = 1;
   warnings.recycling_almost_full = 1;
   return tft_to_hardware_status(TftDisplay_ShowBinWarnings(&warnings));
+#endif
 }
 
 SorterHardwareStatus SorterHardware_UpdateBinWarnings(void)
@@ -261,7 +292,7 @@ const char *SorterHardwareStatus_ToMessage(SorterHardwareStatus status)
   }
 }
 
-#if SORTER_HARDWARE_ENABLED
+#if SORTER_SERVOS_ACTIVE
 static SorterHardwareStatus set_route(SorterClass class_name)
 {
   uint32_t diverter_1_us = SERVO_CENTER_PULSE_US;
@@ -341,7 +372,9 @@ static SorterHardwareStatus servo_to_hardware_status(ServoStatus status)
   }
   return SORTER_HW_STATUS_SERVO_ERROR;
 }
+#endif
 
+#if SORTER_ULTRASONIC_ACTIVE
 static SorterHardwareStatus ultrasonic_to_hardware_status(UltrasonicStatus status)
 {
   if (status == ULTRASONIC_STATUS_OK)

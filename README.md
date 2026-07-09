@@ -8,9 +8,9 @@ The current system classifies trash item images into three classes:
 - compost
 - recycling
 
-The Raspberry Pi/Python side handles image classification, confidence thresholding, decision logic, serial command generation, simulation, and diagnostics. The STM32 side handles UART command parsing, protocol validation, dry-run sort execution, state tracking, and the future control layer for actuators and sensors.
+The Raspberry Pi/Python side handles image classification, confidence thresholding, camera/image input, logging, simulation, serial command generation, and diagnostics. The STM32 side handles UART command parsing, protocol validation, state tracking, and servo-control firmware for the diverter/trapdoor mechanism.
 
-The laptop workflow still works without hardware, while the embedded path is being built in small milestones. The current hardware milestone verifies Python-to-STM32 serial communication through `COM6` using dry-run STM32 firmware. Physical motor, actuator, chute, and sensor control are planned future hardware milestones.
+The laptop workflow still works without hardware, while the embedded path is being built in small, testable milestones. The current verified hardware milestone is Python-to-STM32 serial communication on `COM6` plus four-servo PWM bring-up for diverter and trapdoor tests. Ultrasonic bin-full sensing and the SPI TFT display are scaffolded but not yet verified.
 
 ## Project Structure
 
@@ -38,6 +38,7 @@ Garbage Sorter/
   models/
   logs/
   src/
+  tests/
   docs/
   firmware/
     stm32/
@@ -55,22 +56,60 @@ Image or camera input
   -> class prediction and confidence check
   -> serial SORT command
   -> STM32 receives and validates command
-  -> STM32 returns ACK and DONE
-  -> future actuator control routes the item to the correct bin
+  -> STM32 moves configured servos for diverter/trapdoor sequence
+  -> STM32 returns DONE or ERROR
+  -> future ultrasonic/TFT feedback improves operator awareness
 ```
 
-Today, the ML and serial communication parts are implemented. The STM32 firmware performs a dry-run sort response so the Raspberry Pi/Python side can be tested before motors, actuators, ultrasonic sensors, and the rotating chute are connected.
+Today, the ML, simulation, serial communication, STM32 command parser, and servo PWM bring-up are implemented. Physical sorting reliability still depends on mechanical calibration, object placement, and repeated hardware testing.
 
-## Current Milestone
+## Current Status
 
-The project currently includes:
+| Feature | Status |
+| --- | --- |
+| ML image classifier | Implemented |
+| Dataset import/splitting | Implemented |
+| Simulation mode | Implemented |
+| Python serial protocol | Implemented |
+| STM32 `PING`/`STATUS`/`RESET`/`SORT` protocol | Implemented |
+| 4-servo PWM bring-up | Implemented locally; verify after flashing |
+| Diverter/trapdoor servo test commands | Implemented |
+| Ultrasonic bin fullness sensors | Scaffolded, not yet verified |
+| SPI TFT display | Scaffolded, not yet verified |
+| Full physical sorting reliability | In progress |
 
-- A train/evaluate/predict ML classification pipeline using PyTorch and MobileNetV3 Small
-- A simulation-first sorter runner for laptop and Raspberry Pi development
-- A serial protocol between Python and STM32
-- STM32 dry-run firmware for `PING`, `STATUS`, `RESET`, and `SORT`
-- Verified terminal/diagnostic communication on `COM6`
-- No real motor, actuator, ultrasonic sensor, or chute control yet
+## Technical Highlights
+
+- Transfer-learning image classifier for landfill, compost, and recycling
+- Simulation-first hardware interface for safe laptop development
+- Plain-text UART protocol between Raspberry Pi/Python and STM32
+- STM32 firmware with command parser, state machine, and hardware abstraction layers
+- Servo PWM control for two binary diverters and a dual-servo trapdoor
+- Safety-first staged hardware bring-up with subsystem flags for servos, ultrasonic sensors, and TFT display
+
+## Demo Commands
+
+Train and evaluate the classifier:
+
+```powershell
+python src/train.py
+python src/evaluate.py
+```
+
+Run the simulated sorter:
+
+```powershell
+python src/run_sorter.py --hardware sim --image data/test/recycling/example.jpg
+```
+
+Check STM32 serial communication and servo bring-up on `COM6`:
+
+```powershell
+python src/hardware_diagnostics.py --check-serial-ping --port COM6
+python src/hardware_diagnostics.py --test-diverters --port COM6
+python src/hardware_diagnostics.py --test-trapdoor --port COM6
+python src/hardware_diagnostics.py --check-serial-sort recycling --port COM6
+```
 
 ## Windows Setup
 
@@ -300,6 +339,7 @@ When `--image` is provided, no camera is required.
 - [Serial Protocol](docs/SERIAL_PROTOCOL.md)
 - [Raspberry Pi Setup](docs/RASPBERRY_PI_SETUP.md)
 - [STM32 Integration Plan](docs/STM32_INTEGRATION_PLAN.md)
+- [Project Status](docs/PROJECT_STATUS.md)
 
 ## STM32 Firmware
 
@@ -313,10 +353,11 @@ Current STM32 details:
 - IDE: STM32CubeIDE
 - UART: USART2 at `115200` baud
 - Windows development port currently used: `COM6`
-- Current firmware mode: dry-run serial protocol only
-- Supported commands: `PING`, `STATUS`, `RESET`, `SORT`
+- Current verified hardware milestone: servo PWM bring-up
+- Supported protocol commands: `PING`, `STATUS`, `RESET`, `SORT`
+- Supported bring-up commands: `TEST_DIVERTERS`, `TEST_TRAPDOOR`, `TEST_ULTRASONIC`, `TEST_DISPLAY`
 
-The dry-run firmware validates commands and returns protocol responses, but it does not move motors, actuators, sensors, or a chute yet.
+The STM32 firmware currently controls four configured servo PWM outputs for diverter/trapdoor bring-up. Ultrasonic sensors and TFT display code are scaffolded behind disabled subsystem flags until those peripherals are configured and tested.
 
 ## Hardware Diagnostics
 
@@ -332,11 +373,15 @@ python src/hardware_diagnostics.py --check-camera --camera picamera2
 python src/hardware_diagnostics.py --check-sim
 python src/hardware_diagnostics.py --check-serial-ping --port COM6
 python src/hardware_diagnostics.py --check-serial-ping --port /dev/ttyACM0
+python src/hardware_diagnostics.py --test-diverters --port COM6
+python src/hardware_diagnostics.py --test-trapdoor --port COM6
+python src/hardware_diagnostics.py --test-ultrasonic --port COM6
+python src/hardware_diagnostics.py --test-display --port COM6
 python src/hardware_diagnostics.py --check-serial-sort recycling --port COM6
 python src/hardware_diagnostics.py --full-sim --image data/test/recycling/example.jpg
 ```
 
-Run serial sort diagnostics only with motors disconnected or STM32 dry-run firmware.
+Run servo diagnostics no-load first. Do not attach servos to the mechanism until pulse ranges, directions, and clearances are calibrated.
 
 ## Webcam Demo
 
@@ -369,9 +414,18 @@ For uncertain predictions, the app prints:
 Please reposition item or sort manually.
 ```
 
+## Safety
+
+- Servos require an external 5-6 V supply.
+- STM32 ground and external servo ground must be common.
+- Do not power servos from STM32 GPIO.
+- Do not attach servos to the mechanism until pulse ranges are calibrated.
+- Start with conservative pulse widths and no-load tests.
+- Physical sorting reliability depends on mechanical calibration and repeated testing.
+
 ## Hardware Simulation
 
-Real actuator and sensor control is not implemented yet. For laptop development, `src/hardware_simulator.py` simulates the STM32 sort sequence:
+For laptop development, `src/hardware_simulator.py` simulates the STM32 sort sequence without requiring hardware:
 
 ```text
 Sending command to STM32: SORT class=recycling confidence=0.91
@@ -382,7 +436,7 @@ STM32: sorting complete
 STM32: DONE
 ```
 
-The real serial path is also scaffolded for Raspberry Pi to STM32 communication, but the STM32 firmware is currently dry-run only.
+The real serial path is available for STM32 bring-up. Servo control is the currently verified hardware subsystem; ultrasonic fullness detection and TFT status display remain future bring-up milestones.
 
 ## Notes
 

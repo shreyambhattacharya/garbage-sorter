@@ -1,5 +1,12 @@
 from config import CLASS_NAMES
 
+TEST_COMMANDS = {
+    "TEST_DIVERTERS",
+    "TEST_TRAPDOOR",
+    "TEST_ULTRASONIC",
+    "TEST_DISPLAY",
+}
+
 
 def validate_class_name(class_name: str) -> None:
     if class_name not in CLASS_NAMES:
@@ -35,6 +42,28 @@ def make_status_command() -> str:
 
 def make_reset_command() -> str:
     return "RESET\n"
+
+
+def make_test_command(test_name: str) -> str:
+    if test_name not in TEST_COMMANDS:
+        raise ValueError(f"Invalid test command '{test_name}'. Expected one of: {', '.join(sorted(TEST_COMMANDS))}")
+    return f"{test_name}\n"
+
+
+def make_test_diverters_command() -> str:
+    return make_test_command("TEST_DIVERTERS")
+
+
+def make_test_trapdoor_command() -> str:
+    return make_test_command("TEST_TRAPDOOR")
+
+
+def make_test_ultrasonic_command() -> str:
+    return make_test_command("TEST_ULTRASONIC")
+
+
+def make_test_display_command() -> str:
+    return make_test_command("TEST_DISPLAY")
 
 
 def parse_key_value_tokens(tokens: list[str]) -> dict | None:
@@ -76,12 +105,18 @@ def parse_response(line: str) -> dict:
 
         if response_type in {"ACK", "DONE"}:
             values = parse_key_value_tokens(rest)
-            if values is None or set(values) != {"id"}:
+            if values is None:
                 return malformed(raw)
-            command_id = parse_int(values["id"])
-            if command_id is None:
-                return malformed(raw)
-            return {"type": response_type, "id": command_id}
+            if set(values) == {"id"}:
+                command_id = parse_int(values["id"])
+                if command_id is None:
+                    return malformed(raw)
+                return {"type": response_type, "id": command_id}
+            if response_type == "DONE" and set(values) == {"test"}:
+                if values["test"] not in TEST_COMMANDS:
+                    return malformed(raw)
+                return {"type": "DONE", "test": values["test"]}
+            return malformed(raw)
 
         if response_type == "ERROR":
             if len(rest) < 2 or not rest[0].startswith("id="):
@@ -100,9 +135,33 @@ def parse_response(line: str) -> dict:
 
         if response_type == "STATUS":
             values = parse_key_value_tokens(rest)
-            if values is None or set(values) != {"state"}:
+            if values is None:
                 return malformed(raw)
-            return {"type": "STATUS", "state": values["state"]}
+            if set(values) == {"state"}:
+                return {"type": "STATUS", "state": values["state"]}
+            if set(values) == {"test", "result"}:
+                if values["test"] not in TEST_COMMANDS:
+                    return malformed(raw)
+                return {"type": "STATUS", "test": values["test"], "result": values["result"]}
+            return malformed(raw)
+
+        if response_type == "DISTANCE":
+            values = parse_key_value_tokens(rest)
+            if values is None or set(values) != {"class", "valid", "cm_x100"}:
+                return malformed(raw)
+            if values["class"] not in CLASS_NAMES:
+                return malformed(raw)
+            valid = parse_int(values["valid"])
+            cm_x100 = parse_int(values["cm_x100"])
+            if valid not in {0, 1} or cm_x100 is None:
+                return malformed(raw)
+            return {
+                "type": "DISTANCE",
+                "class": values["class"],
+                "valid": bool(valid),
+                "cm_x100": cm_x100,
+                "distance_cm": cm_x100 / 100.0,
+            }
 
         return malformed(raw)
     except Exception:
