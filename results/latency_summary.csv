@@ -1,0 +1,2 @@
+status,reason,regenerate_command
+Pending,"Real latency was not measured because the hardware-actuating STM32 latency run was not performed in this pass.","python src/measure_latency.py --port COM6 --image data/test/recycling/example.jpg --class recycling --trials 30"
