@@ -319,35 +319,30 @@ results/evaluation_summary.md
 
 ## Results
 
-No saved evaluation or latency result artifacts were found in the repo during this documentation pass. Run the commands above and replace the placeholder values below with the latest measured results before final submission.
+No final evaluation or latency artifacts are committed yet. The repo intentionally does not claim accuracy, confusion-matrix, or latency numbers until they are generated from a real local run.
 
-Model evaluation on held-out test set:
+Generate evaluation artifacts with:
 
-| Metric | Result |
-|---|---:|
-| Overall test accuracy | [INSERT ACTUAL VALUE] |
-| Landfill accuracy | [INSERT ACTUAL VALUE] |
-| Compost accuracy | [INSERT ACTUAL VALUE] |
-| Recycling accuracy | [INSERT ACTUAL VALUE] |
+```powershell
+python src/evaluate.py --save-confusion-matrix --save-summary
+```
 
-Confusion matrix:
+Generate classify-to-route latency artifacts after the STM32 is flashed and connected:
 
-| Actual \ Predicted | Landfill | Compost | Recycling |
-|---|---:|---:|---:|
-| Landfill | [INSERT] | [INSERT] | [INSERT] |
-| Compost | [INSERT] | [INSERT] | [INSERT] |
-| Recycling | [INSERT] | [INSERT] | [INSERT] |
+```powershell
+python src/measure_latency.py --port COM6 --image data/test/recycling/example.jpg --class recycling --trials 30
+```
 
-End-to-end classify-to-route latency:
+Expected result artifact locations:
 
-| Metric | Result |
-|---|---:|
-| Average latency | [INSERT ACTUAL LATENCY] |
-| Minimum latency | [INSERT ACTUAL LATENCY] |
-| Maximum latency | [INSERT ACTUAL LATENCY] |
-| Trials | [INSERT TRIAL COUNT] |
+```text
+results/evaluation_summary.md
+results/confusion_matrix.png
+results/latency_summary.md
+results/latency_summary.csv
+```
 
-Latency includes image capture or image load, preprocessing, MobileNetV3 inference, confidence thresholding, serial `SORT` command transmission, STM32 `ACK`/`DONE` response handling, diverter servo movement, and trapdoor open/close motion.
+Latency measurement includes image load, preprocessing, MobileNetV3 inference, confidence thresholding, serial `SORT` command transmission, STM32 `ACK`/`DONE` response handling, diverter servo movement, and trapdoor open/close motion.
 
 ## Predict One Image
 
@@ -381,7 +376,7 @@ Type `q` or `quit` to exit.
 
 ## Sorter Runner
 
-`src/run_sorter.py` is the simulation-first main app for the future Raspberry Pi sorter. It uses the trained ML model, applies the confidence threshold, logs predictions, and sends accepted predictions to either simulated hardware or serial hardware.
+`src/run_sorter.py` is the simulation-first main app for the Raspberry Pi/STM32 sorter path. It uses the trained ML model, applies the confidence threshold, logs predictions, and sends accepted predictions to either simulated hardware or serial hardware.
 
 Run with an existing saved image and simulated hardware:
 
@@ -395,7 +390,7 @@ Run with simulated hardware and OpenCV camera capture:
 python src/run_sorter.py --hardware sim --camera opencv
 ```
 
-Future Raspberry Pi mode with Picamera2 and STM32 serial hardware:
+Raspberry Pi mode with Picamera2 and STM32 serial hardware, after the STM32 is flashed and connected:
 
 ```powershell
 python src/run_sorter.py --hardware serial --camera picamera2

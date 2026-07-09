@@ -71,6 +71,8 @@ Initial pulse: 1500
 
 With the current 84 MHz timer clock, this gives a 1 us timer tick and a 20 ms servo period.
 
+`TIM3_CH4` should also keep the same `1500` initial pulse as channels 1-3. After regenerating code from STM32CubeIDE, verify both `garbage_sorter_stm32.ioc` and `Core/Src/main.c` still show `1500` for all four TIM3 PWM channels.
+
 Servo calibration values are editable in `sorter_hardware_config.h`:
 
 ```c
